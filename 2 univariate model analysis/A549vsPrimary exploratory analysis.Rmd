@@ -1,0 +1,695 @@
+## SETUP
+```{r setup, include=F}
+library(ComplexHeatmap)
+library(pheatmap)
+
+library(eulerr)
+library(cowplot)
+library(circlize)
+library(writexl)
+library(readxl)
+library(GGally)
+library(scales)
+
+library(tidyverse)
+```
+
+
+## READ DATA
+```{r include = F}
+# dea <- read_tsv("../data/A549vsPrimary_univariateDEA.txt") %>%
+#   mutate(sig = case_when(
+#     log2fold <= -1 & FDR <= 0.05 ~ "dn",
+#     log2fold >=  1 & FDR <= 0.05 ~ "up",
+#     TRUE ~ "ns"
+#   ))
+
+# dea <- read_tsv("../data/A549vsPrimary_univariateDEA.txt") %>%
+#   mutate(sig = case_when(
+#     log2fold < 0 & FDR <= 0.05 ~ "dn",
+#     log2fold > 0 & FDR <= 0.05 ~ "up",
+#     TRUE ~ "ns"
+#   ))
+
+dea <- read_tsv("../data/A549vsPrimary_univariateDEA.txt") %>%
+  mutate(sig = case_when(
+    log2fold <= -1 ~ "dn",
+    log2fold >=  1 ~ "up",
+    TRUE ~ "ns"
+  ))
+
+tpm <- read_tsv("../data/A549vsPrimary_tpm.txt")
+
+multivariate <- read_tsv("../data/A549vsPrimary_multivariateDEA.txt")
+
+a549_tpm = filter(tpm, celltype == "A549")
+ali_tpm = filter(tpm, celltype == "ALI")
+hbe_tpm = filter(tpm, celltype == "HBE")
+```
+
+
+## GENELISTS
+```{r write genelists}
+for (s in c("up", "dn")){
+  for(ttt in c("IL1B", "GC", "combo")){
+    for(ct in c("A549", "ALI", "HBE")){
+      for(ti in c("6h")){
+        
+        df = filter(dea, sig == s & treatment == ttt & celltype == ct & time == ti)
+        genes = pull(df, Gene) %>% unique() %>% sort()
+        
+        filename = paste0("../data/genelists/", paste(ct, ttt, ti, s), ".txt")
+        
+        writeLines(genes, filename)
+        
+      }
+    }
+  }
+}
+
+rm(df, ct, filename, genes, s, ti, ttt)
+```
+
+```{r read genelists}
+genelists = list()
+for(l in list.files("../data/genelists/")){
+  name = gsub(".txt", "", l)
+  genelists[[name]] = readLines(paste0("../data/genelists/", l))
+}
+
+rm(l, name)
+```
+
+
+# VENNS
+```{r make venns and groups}
+groups_il1b <- unique(c(
+  genelists[["A549 IL1B 6h up"]], genelists[["A549 IL1B 6h dn"]],
+  genelists[["ALI IL1B 6h up"]], genelists[["ALI IL1B 6h dn"]],
+  genelists[["HBE IL1B 6h up"]], genelists[["HBE IL1B 6h dn"]]
+)) %>%
+  as.data.frame(nm = "Gene") %>%
+  mutate(
+    A549 = if_else(Gene %in% unique(c(genelists[["A549 IL1B 6h up"]], genelists[["A549 IL1B 6h dn"]])), "A549", NA),
+    ALI = if_else(Gene %in% unique(c(genelists[["ALI IL1B 6h up"]], genelists[["ALI IL1B 6h dn"]])), "ALI", NA),
+    HBE = if_else(Gene %in% unique(c(genelists[["HBE IL1B 6h up"]], genelists[["HBE IL1B 6h dn"]])), "HBE", NA)
+  ) %>%
+  group_by(Gene) %>% 
+  mutate(group = paste(na.omit(c(A549, ALI, HBE)), collapse = "&")) %>% 
+  ungroup()
+
+venn_il1b <- groups_il1b %>%
+  select(Gene, group) %>%
+  count(group) %>%
+  deframe() %>%
+  euler(shape = "circle")
+
+png("il1b_6h_venn.png", width=720, height=480, res = 100)
+plot(venn_il1b,
+     quantities = list(type = c("counts")),
+     main = "IL1B-reg genes (6h)")
+dev.off()
+
+#===============================================================================
+
+groups_gc <- unique(c(
+  genelists[["A549 GC 6h up"]], genelists[["A549 GC 6h dn"]],
+  genelists[["ALI GC 6h up"]], genelists[["ALI GC 6h dn"]],
+  genelists[["HBE GC 6h up"]], genelists[["HBE GC 6h dn"]]
+)) %>%
+  as.data.frame(nm = "Gene") %>%
+  mutate(
+    A549 = if_else(Gene %in% unique(c(genelists[["A549 GC 6h up"]], genelists[["A549 GC 6h dn"]])), "A549", NA),
+    ALI = if_else(Gene %in% unique(c(genelists[["ALI GC 6h up"]], genelists[["ALI GC 6h dn"]])), "ALI", NA),
+    HBE = if_else(Gene %in% unique(c(genelists[["HBE GC 6h up"]], genelists[["HBE GC 6h dn"]])), "HBE", NA)
+  ) %>%
+  group_by(Gene) %>% 
+  mutate(group = paste(na.omit(c(A549, ALI, HBE)), collapse = "&")) %>% 
+  ungroup()
+
+venn_gc <- groups_gc %>%
+  select(Gene, group) %>%
+  count(group) %>%
+  deframe() %>%
+  euler(shape = "circle")
+
+png("gc_6h_venn.png", width=720, height=480, res = 100)
+plot(venn_gc,
+     quantities = list(type = c("counts")),
+     main = "GC-reg genes (6h)")
+dev.off()
+
+#===============================================================================
+
+groups_combo <- unique(c(
+  genelists[["A549 combo 6h up"]], genelists[["A549 combo 6h dn"]],
+  genelists[["ALI combo 6h up"]], genelists[["ALI combo 6h dn"]],
+  genelists[["HBE v 6h up"]], genelists[["HBE combo 6h dn"]]
+)) %>%
+  as.data.frame(nm = "Gene") %>%
+  mutate(
+    A549 = if_else(Gene %in% unique(c(genelists[["A549 combo 6h up"]], genelists[["A549 combo 6h dn"]])), "A549", NA),
+    ALI = if_else(Gene %in% unique(c(genelists[["ALI combo 6h up"]], genelists[["ALI combo 6h dn"]])), "ALI", NA),
+    HBE = if_else(Gene %in% unique(c(genelists[["HBE combo 6h up"]], genelists[["HBE combo 6h dn"]])), "HBE", NA)
+  ) %>%
+  group_by(Gene) %>% 
+  mutate(group = paste(na.omit(c(A549, ALI, HBE)), collapse = "&")) %>% 
+  ungroup()
+
+venn_combo <- groups_combo %>%
+  select(Gene, group) %>%
+  count(group) %>%
+  deframe() %>%
+  euler(shape = "circle")
+
+png("combo_6h_venn.png", width=720, height=480, res = 100)
+plot(venn_combo,
+     quantities = list(type = c("counts")),
+     main = "combo-reg genes (6h)")
+dev.off()
+
+#===============================================================================
+groups = list(
+  il1b = groups_il1b,
+  gc = groups_gc,
+  combo = groups_combo
+)
+
+rm(groups_combo, groups_il1b, groups_gc,
+   venn_combo, venn_il1b, venn_gc)
+```
+
+
+## HEATMAPS
+```{r helper functions}
+#consistent heatmap function
+make_heatmap <- function(matrix, colors,
+                         colsplit = c(rep("A549", 4), rep("ALI", 5), rep("HBE", 5)), 
+                         width = 5, height = 0.08,
+                         showLegend = F, rowTitle = NULL, legendTitle = NULL){
+  hm = Heatmap(matrix,
+               col = colors,
+               cluster_rows = F, cluster_columns = F,
+               show_row_dend = F, show_column_dend = F,
+               show_row_names = F, show_column_names = F,
+               column_split = colsplit,
+               row_gap = unit(1, "mm"), column_gap = unit(2, "mm"),
+               width = ncol(matrix)*unit(width, "mm"), height = nrow(matrix)*unit(height, "mm"),
+               show_heatmap_legend = showLegend, name = legendTitle, border = T,
+               row_title = rowTitle, column_title = unique(colsplit))
+  hm
+}
+
+#consistent tpm matrix functions 
+get_il1b_matrix <- function(GROUP){
+  df <- rbind(a549_tpm %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+              ali_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+              hbe_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold)) %>%
+    filter(treatment == "IL1B") %>%
+    filter(Gene %in% (groups[["il1b"]] %>% filter(group == GROUP) %>% pull(Gene))) %>%
+    mutate(sample = paste(celltype, treatment, rep)) %>%
+    select(Gene, sample, log2fold) %>%
+    pivot_wider(names_from = "sample", values_from = "log2fold") %>%
+    column_to_rownames("Gene") %>%
+    select(contains("A549"), contains("ALI"), contains("HBE")) %>%
+    replace(is.na(.), 0) %>%
+    as.matrix() %>% { .[hclust(dist(.), method = "ward.D2")$order, ] }
+  df
+}
+
+get_il1bVsCombo_matrix <- function(GROUP, zScore = FALSE){
+
+  mat <- rbind(
+      a549_tpm %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+      ali_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+      hbe_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold)
+    ) %>%
+    filter(treatment %in% c("IL1B", "combo")) %>%
+    filter(Gene %in% (rbind(groups[["il1b"]], groups[["combo"]]) %>% filter(group == GROUP) %>% pull(Gene))) %>%
+    mutate(sample = paste(celltype, treatment, rep)) %>%
+    select(Gene, sample, log2fold) %>%
+    pivot_wider(names_from = "sample", values_from = "log2fold") %>%
+    column_to_rownames("Gene") %>%
+    select(
+      contains("A549 IL1B"), contains("A549 combo"),
+      contains("ALI IL1B"),  contains("ALI combo"),
+      contains("HBE IL1B"),  contains("HBE combo")
+    ) %>%
+    replace(is.na(.), 0) %>%
+    as.matrix()
+
+  if (zScore) {
+    z_within <- function(m) t(scale(t(m)))
+    mat <- cbind(
+      z_within(mat[, grepl("^A549 ", colnames(mat))]),
+      z_within(mat[, grepl("^ALI ",  colnames(mat))]),
+      z_within(mat[, grepl("^HBE ",  colnames(mat))])
+    )
+  }
+  mat[hclust(dist(mat), method = "ward.D2")$order, ]
+}
+
+get_gc_matrix <- function(GROUP){
+  df <- rbind(a549_tpm %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+              ali_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+              hbe_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold)) %>%
+    filter(treatment == "GC") %>%
+    filter(Gene %in% (groups[["gc"]] %>% filter(group == GROUP) %>% pull(Gene))) %>%
+    mutate(sample = paste(celltype, treatment, rep)) %>%
+    select(Gene, sample, log2fold) %>%
+    pivot_wider(names_from = "sample", values_from = "log2fold") %>%
+    column_to_rownames("Gene") %>%
+    select(contains("A549"), contains("ALI"), contains("HBE")) %>%
+    replace(is.na(.), 0) %>%
+    as.matrix() %>% { .[hclust(dist(.), method = "ward.D2")$order, ] }
+  df
+}
+
+get_combo_matrix <- function(GROUP){
+  df <- rbind(a549_tpm %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+              ali_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold), 
+              hbe_tpm  %>% select(Gene, celltype, rep, treatment, time, log2fold)) %>%
+    filter(treatment == "combo") %>%
+    filter(Gene %in% (groups[["combo"]] %>% filter(group == GROUP) %>% pull(Gene))) %>%
+    mutate(sample = paste(celltype, treatment, rep)) %>%
+    select(Gene, sample, log2fold) %>%
+    pivot_wider(names_from = "sample", values_from = "log2fold") %>%
+    column_to_rownames("Gene") %>%
+    select(contains("A549"), contains("ALI"), contains("HBE")) %>%
+    replace(is.na(.), 0) %>%
+    as.matrix() %>% { .[hclust(dist(.), method = "ward.D2")$order, ] }
+  df
+}
+```
+
+```{r IL1B heatmap}
+mat_a <- get_il1b_matrix("A549")
+mat_l <- get_il1b_matrix("ALI")
+mat_h <- get_il1b_matrix("HBE")
+mat_al <- get_il1b_matrix("A549&ALI")
+mat_ah <- get_il1b_matrix("A549&HBE")
+mat_lh <- get_il1b_matrix("ALI&HBE")
+mat_alh <- get_il1b_matrix("A549&ALI&HBE")
+
+min = min(
+  quantile(mat_a,   0.02, na.rm = TRUE),
+  quantile(mat_l,   0.02, na.rm = TRUE),
+  quantile(mat_h,   0.02, na.rm = TRUE),
+  quantile(mat_al,  0.02, na.rm = TRUE),
+  quantile(mat_ah,  0.02, na.rm = TRUE),
+  quantile(mat_lh,  0.02, na.rm = TRUE),
+  quantile(mat_alh, 0.02, na.rm = TRUE)
+)
+
+max = max(
+  quantile(mat_a,   0.98, na.rm = TRUE),
+  quantile(mat_l,   0.98, na.rm = TRUE),
+  quantile(mat_h,   0.98, na.rm = TRUE),
+  quantile(mat_al,  0.98, na.rm = TRUE),
+  quantile(mat_ah,  0.98, na.rm = TRUE),
+  quantile(mat_lh,  0.98, na.rm = TRUE),
+  quantile(mat_alh, 0.98, na.rm = TRUE)
+)
+
+col = circlize::colorRamp2(
+  c(
+    seq(min,    -0.5,  length = 90),
+    seq(-0.49,  0.49,  length = 20),
+    seq(0.5,    max,   length = 90)
+  ),
+  colorRampPalette(c("steelblue4", "steelblue3" , "white", "firebrick3", "firebrick4"))(200))
+
+hm_a <- make_heatmap(mat_a, col, showLegend = T, rowTitle = "A", legendTitle = "log2fold tpm")
+hm_l <- make_heatmap(mat_l, col, rowTitle = "L")
+hm_h <- make_heatmap(mat_h, col, rowTitle = "H")
+hm_al <- make_heatmap(mat_al, col, rowTitle = "AL")
+hm_ah <- make_heatmap(mat_ah, col, rowTitle = "AH")
+hm_lh <- make_heatmap(mat_lh, col, rowTitle = "LH")
+hm_alh <- make_heatmap(mat_alh, col, rowTitle = "ALH")
+
+pdf("il1b heatmap.pdf", width = 8, height = 10)
+draw(hm_a %v% hm_l %v% hm_h %v% hm_al %v% hm_ah %v% hm_lh %v% hm_alh)
+dev.off()
+
+write_xlsx(list("A" = rownames_to_column(as.data.frame(mat_a), "Gene"), 
+                "L" = rownames_to_column(as.data.frame(mat_l), "Gene"), 
+                "H" = rownames_to_column(as.data.frame(mat_h), "Gene"), 
+                "AL" = rownames_to_column(as.data.frame(mat_al), "Gene"), 
+                "AH" = rownames_to_column(as.data.frame(mat_ah), "Gene"), 
+                "LH" = rownames_to_column(as.data.frame(mat_lh), "Gene"), 
+                "ALH" = rownames_to_column(as.data.frame(mat_alh), "Gene")),
+           "il1b venn log2fold matrices.xlsx")
+
+rm(list = ls(pattern = "^mat_"))
+rm(list = ls(pattern = "^hm_"))
+rm(list = ls(pattern = "_grob$"))
+rm(min, max, col)
+```
+
+```{r GC heatmap}
+mat_a <- get_gc_matrix("A549")
+mat_l <- get_gc_matrix("ALI")
+mat_h <- get_gc_matrix("HBE")
+mat_al <- get_gc_matrix("A549&ALI")
+mat_ah <- get_gc_matrix("A549&HBE")
+mat_lh <- get_gc_matrix("ALI&HBE")
+mat_alh <- get_gc_matrix("A549&ALI&HBE")
+
+min = min(
+  min(mat_a), min(mat_l), min(mat_h),
+  min(mat_al), min(mat_ah), min(mat_lh),
+  min(mat_alh)
+)
+
+max = max(
+  max(mat_a), max(mat_l), max(mat_h),
+  max(mat_al), max(mat_ah), max(mat_lh),
+  max(mat_alh)
+)
+
+col = circlize::colorRamp2(
+  c(
+    seq(min,    -0.5,  length = 90),
+    seq(-0.49,  0.49,  length = 20),
+    seq(0.5,    max,   length = 90)
+  ),
+  colorRampPalette(c("steelblue4", "steelblue3" , "white", "firebrick3", "firebrick4"))(200))
+
+hm_a <- make_heatmap(mat_a, col, showLegend = T, rowTitle = "A", legendTitle = "log2fold tpm", height = 0.2)
+hm_l <- make_heatmap(mat_l, col, rowTitle = "L", height = 0.2)
+hm_h <- make_heatmap(mat_h, col, rowTitle = "H", height = 0.2)
+hm_al <- make_heatmap(mat_al, col, rowTitle = "AL", height = 0.2)
+hm_ah <- make_heatmap(mat_ah, col, rowTitle = "AH", height = 0.2)
+hm_lh <- make_heatmap(mat_lh, col, rowTitle = "LH", height = 0.2)
+hm_alh <- make_heatmap(mat_alh, col, rowTitle = "ALH", height = 0.2)
+
+pdf("gc heatmap.pdf", width = 8, height = 10)
+draw(hm_a %v% hm_l %v% hm_h %v% hm_al %v% hm_ah %v% hm_lh %v% hm_alh)
+dev.off()
+
+write_xlsx(list("A" = rownames_to_column(as.data.frame(mat_a), "Gene"), 
+                "L" = rownames_to_column(as.data.frame(mat_l), "Gene"), 
+                "H" = rownames_to_column(as.data.frame(mat_h), "Gene"), 
+                "AL" = rownames_to_column(as.data.frame(mat_al), "Gene"), 
+                "AH" = rownames_to_column(as.data.frame(mat_ah), "Gene"), 
+                "LH" = rownames_to_column(as.data.frame(mat_lh), "Gene"), 
+                "ALH" = rownames_to_column(as.data.frame(mat_alh), "Gene")),
+           "gc venn log2fold matrices.xlsx")
+
+rm(list = ls(pattern = "^mat_"))
+rm(list = ls(pattern = "^hm_"))
+rm(list = ls(pattern = "_grob$"))
+rm(min, max, col)
+```
+
+```{r combo heatmap}
+mat_a <- get_combo_matrix("A549")
+mat_l <- get_combo_matrix("ALI")
+mat_h <- get_combo_matrix("HBE")
+mat_al <- get_combo_matrix("A549&ALI")
+mat_ah <- get_combo_matrix("A549&HBE")
+mat_lh <- get_combo_matrix("ALI&HBE")
+mat_alh <- get_combo_matrix("A549&ALI&HBE")
+
+min = min(
+  min(mat_a), min(mat_l), min(mat_h),
+  min(mat_al), min(mat_ah), min(mat_lh),
+  min(mat_alh)
+)
+
+max = max(
+  max(mat_a), max(mat_l), max(mat_h),
+  max(mat_al), max(mat_ah), max(mat_lh),
+  max(mat_alh)
+)
+
+col = circlize::colorRamp2(
+  c(
+    seq(min,    -0.5,  length = 90),
+    seq(-0.49,  0.49,  length = 20),
+    seq(0.5,    max,   length = 90)
+  ),
+  colorRampPalette(c("steelblue4", "steelblue3" , "white", "firebrick3", "firebrick4"))(200))
+
+hm_a <- make_heatmap(mat_a, col, showLegend = T, rowTitle = "A", legendTitle = "log2fold tpm")
+hm_l <- make_heatmap(mat_l, col, rowTitle = "L")
+hm_h <- make_heatmap(mat_h, col, rowTitle = "H")
+hm_al <- make_heatmap(mat_al, col, rowTitle = "AL")
+hm_ah <- make_heatmap(mat_ah, col, rowTitle = "AH")
+hm_lh <- make_heatmap(mat_lh, col, rowTitle = "LH")
+hm_alh <- make_heatmap(mat_alh, col, rowTitle = "ALH")
+
+pdf("combo heatmap.pdf", width = 8, height = 10)
+draw(hm_a %v% hm_l %v% hm_h %v% hm_al %v% hm_ah %v% hm_lh %v% hm_alh)
+dev.off()
+
+write_xlsx(list("A" = rownames_to_column(as.data.frame(mat_a), "Gene"), 
+                "L" = rownames_to_column(as.data.frame(mat_l), "Gene"), 
+                "H" = rownames_to_column(as.data.frame(mat_h), "Gene"), 
+                "AL" = rownames_to_column(as.data.frame(mat_al), "Gene"), 
+                "AH" = rownames_to_column(as.data.frame(mat_ah), "Gene"), 
+                "LH" = rownames_to_column(as.data.frame(mat_lh), "Gene"), 
+                "ALH" = rownames_to_column(as.data.frame(mat_alh), "Gene")),
+           "combo venn log2fold matrices.xlsx")
+
+rm(list = ls(pattern = "^mat_"))
+rm(list = ls(pattern = "^hm_"))
+rm(list = ls(pattern = "_grob$"))
+rm(min, max, col)
+```
+
+```{r IL1B vs combo}
+mat_a <- get_il1bVsCombo_matrix("A549")
+mat_l <- get_il1bVsCombo_matrix("ALI")
+mat_h <- get_il1bVsCombo_matrix("HBE")
+mat_al <- get_il1bVsCombo_matrix("A549&ALI")
+mat_ah <- get_il1bVsCombo_matrix("A549&HBE")
+mat_lh <- get_il1bVsCombo_matrix("ALI&HBE")
+mat_alh <- get_il1bVsCombo_matrix("A549&ALI&HBE")
+
+col = circlize::colorRamp2(
+  seq(-5, 5, length = 200),
+  colorRampPalette(c("steelblue4", "steelblue3" , "white", "firebrick3", "firebrick4"))(200))
+
+columnSplits <- factor(
+  c(rep("A549 IL1B", 4), rep("A549 combo", 4),
+    rep("ALI IL1B", 5), rep("ALI combo", 5),
+    rep("HBE IL1B", 5), rep("HBE combo", 5))
+)
+
+# hm_a <- make_heatmap(mat_a, col, showLegend = T, rowTitle = "A", legendTitle = "log2fold tpm", colsplit = columnSplits)
+# hm_l <- make_heatmap(mat_l, col, rowTitle = "L", colsplit = columnSplits)
+# hm_h <- make_heatmap(mat_h, col, rowTitle = "H", colsplit = columnSplits)
+# hm_al <- make_heatmap(mat_al, col, rowTitle = "AL", colsplit = columnSplits)
+# hm_ah <- make_heatmap(mat_ah, col, rowTitle = "AH", colsplit = columnSplits)
+# hm_lh <- make_heatmap(mat_lh, col, rowTitle = "LH", colsplit = columnSplits)
+# hm_alh <- make_heatmap(mat_alh, col, rowTitle = "ALH", colsplit = columnSplits)
+
+hm_a <- make_heatmap(mat_a, col, rowTitle = "A", height = 0.07, width = 2.5, colsplit = columnSplits)
+hm_l <- make_heatmap(mat_l, col, rowTitle = "L", showLegend = T, legendTitle = "log2fold tpm",
+                     height = 0.12, colsplit = columnSplits, width = 2.5)
+hm_h <- make_heatmap(mat_h, col, rowTitle = "H", height = 0.12, width = 2.5, colsplit = columnSplits)
+hm_al <- make_heatmap(mat_al, col, rowTitle = "AL", height = 0.12, width = 2.5, colsplit = columnSplits)
+hm_ah <- make_heatmap(mat_ah, col, rowTitle = "AH", height = 0.12, width = 2.5, colsplit = columnSplits)
+hm_lh <- make_heatmap(mat_lh, col, rowTitle = "LH", height = 0.12, width = 2.5, colsplit = columnSplits)
+hm_alh <- make_heatmap(mat_alh, col, rowTitle = "ALH", height = 0.12, width = 2.5, colsplit = columnSplits)
+
+left_grob  <- grid.grabExpr(draw(hm_a))
+right_grob <- grid.grabExpr(draw(
+  hm_l %v% hm_h %v% hm_al %v% hm_ah %v% hm_lh %v% hm_alh
+))
+
+# pdf("il1b genes IL1BvsCombo heatmap.pdf", width = 8, height = 10)
+# draw(hm_a %v% hm_l %v% hm_h %v% hm_al %v% hm_ah %v% hm_lh %v% hm_alh)
+# dev.off()
+
+pdf("il1b genes IL1BvsCombo heatmap.pdf", width = 8, height = 10)
+plot_grid(left_grob, right_grob, ncol = 2, rel_widths = c(1, 1))
+dev.off()
+
+write_xlsx(list("A" = rownames_to_column(as.data.frame(mat_a), "Gene"),
+                "L" = rownames_to_column(as.data.frame(mat_l), "Gene"),
+                "H" = rownames_to_column(as.data.frame(mat_h), "Gene"),
+                "AL" = rownames_to_column(as.data.frame(mat_al), "Gene"),
+                "AH" = rownames_to_column(as.data.frame(mat_ah), "Gene"),
+                "LH" = rownames_to_column(as.data.frame(mat_lh), "Gene"),
+                "ALH" = rownames_to_column(as.data.frame(mat_alh), "Gene")),
+           "il1b genes IL1BvsCombo log2fold matrices.xlsx")
+
+rm(list = ls(pattern = "^mat_"))
+rm(list = ls(pattern = "^hm_"))
+rm(list = ls(pattern = "_grob$"))
+rm(col, columnSplits)
+```
+
+```{r cleanup}
+rm(get_combo_matrix, get_gc_matrix, get_il1b_matrix, make_heatmap)
+```
+
+
+# PCA
+```{r}
+a <- a549_tpm %>% 
+  mutate(name = paste("A549", treatment, rep, sep = "_")) %>%
+  select(Gene, name, tpm) %>%
+  pivot_wider(names_from = "name", values_from = "tpm")
+
+b <- ali_tpm %>% 
+  mutate(name = paste("ALI", treatment, rep, sep = "_")) %>%
+  select(Gene, name, tpm) %>%
+  pivot_wider(names_from = "name", values_from = "tpm")
+
+c <- hbe_tpm %>% 
+  mutate(name = paste("HBE", treatment, rep, sep = "_")) %>%
+  select(Gene, name, tpm) %>%
+  pivot_wider(names_from = "name", values_from = "tpm")
+
+mat <- full_join(a, b, by = "Gene") %>%
+  full_join(c, by = "Gene") %>%
+  mutate(across(where(is.numeric), ~ replace_na(.x, -1))) %>%
+  column_to_rownames("Gene") %>%
+  as.matrix()
+vars <- apply(mat, 1, var)
+mat <- mat[vars > 0, , drop = FALSE]
+mat <- t(scale(t(mat))) 
+
+pca <- prcomp(t(mat), center = TRUE, scale. = FALSE)
+
+pca_table <- as.data.frame(pca$x) %>%
+  rownames_to_column("Sample") %>%
+  select(Sample, PC1, PC2, PC3, PC4) %>%
+  separate(Sample, into = c("celltype", "treatment", "rep"), sep = "_") %>%
+  mutate(treatment = factor(treatment, levels = unique(treatment)))
+
+myColors <- c("NS" = "grey30", 
+              "IL1B" = "#FC4E07", 
+              "GC" = "#E7B800", 
+              "combo" = "#2E9FDF")
+
+ggplot(pca_table, aes(x = PC1, y = PC2, color = treatment, shape = celltype)) +
+  geom_point() +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank(),
+        strip.background = element_blank()) +
+  scale_color_manual(values = myColors)
+ggsave("full pca.png", h = 2.5, w = 5, dpi = 600)
+
+ggplot(pca_table %>% filter(treatment %in% c("NS", "IL1B")), 
+       aes(x = PC1, y = PC2, color = treatment, shape = celltype)) +
+  geom_point() +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank(),
+        strip.background = element_blank()) +
+  scale_color_manual(values = myColors)
+ggsave("full pca (no GC).png", h = 2.5, w = 5, dpi = 600)
+
+ggplot(pca_table, aes(x = PC1, y = PC2, color = treatment, shape = celltype, fill = treatment)) +
+  facet_wrap(~celltype, scales = "free") +
+  geom_encircle(alpha = 0.15, color = NA) +
+  geom_point() +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank(),
+        strip.background = element_blank(),
+        legend.position = "none") +
+  scale_color_manual(values = myColors) +
+  scale_fill_manual(values = myColors)
+ggsave("local pca.png", h = 2.5, w = 5, dpi = 600)
+
+ggplot(pca_table %>% filter(treatment %in% c("NS", "IL1B")), 
+       aes(x = PC1, y = PC2, color = treatment, shape = celltype, fill = treatment)) +
+  facet_wrap(~celltype, scales = "free") +
+  geom_encircle(alpha = 0.15, color = NA) +
+  geom_point() +
+  theme_bw() +
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank(),
+        strip.background = element_blank(),
+        legend.position = "none") +
+  scale_color_manual(values = myColors) +
+  scale_fill_manual(values = myColors)
+ggsave("local pca (no GC).png", h = 2.5, w = 5, dpi = 600)
+
+rm(a, b, c, mat, pca, pca_table, myColors, vars)
+```
+
+
+# MISC
+```{r helper functions}
+make_top10DAVID <- function(file, title){
+  read_xlsx(file, sheet = 1) %>%
+    mutate(FDR = as.numeric(FDR)) %>%
+    arrange(FDR) %>% 
+    filter(!(Term %in% c("protein binding", "signal transduction"))) %>%
+    filter(Category != "REACTOME_PATHWAY") %>%
+    mutate(Term = paste0(toupper(substr(Term, 1, 1)), substr(Term, 2, nchar(Term)))) %>%
+    slice_head(n = 10) %>% mutate(Term = factor(Term, levels = rev(unique(Term)))) %>%
+    
+    ggplot(., aes(x = -log10(FDR), y = Term)) +
+    geom_col(mapping = aes(fill = `Fold Enrichment`)) +
+    geom_point(mapping = aes(size = Count)) +
+    scale_fill_viridis_c(option = "viridis") +
+    scale_x_continuous(expand = expansion(mult = c(0.005, 0.1)),
+                       breaks = breaks_pretty(n = 3)) +
+    theme_minimal() +
+    theme(aspect.ratio = 3,
+          panel.grid.minor = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text = element_text(size = 12, color = "black")) +
+    labs(x = expression(-log[10] * "FDR"), y = NULL)
+  
+  ggsave(title, h = 4, w = 10, dpi = 600)
+  print(paste("Saved", title))
+}
+```
+
+```{r check LRT pass vs fail}
+ggplot(multivariate, aes(x = lrt_FDR, fill = lrt_FDR <= 0.05)) +
+  geom_histogram(bins = 51) +
+  theme_minimal() +
+  theme(aspect.ratio = 0.75,
+        panel.grid.minor = element_blank(),
+        legend.position = "bottom") +
+  labs(x = "FDR (likelihood-ratio test)", y = "number of genes")
+
+ggsave("lrt histogram.png", h = 3, w = 4, dpi = 600)
+
+filter(multivariate, lrt_FDR <= 0.05) %>% pull(Gene) %>% unique() %>% length()
+filter(multivariate, lrt_FDR > 0.05) %>% pull(Gene) %>% unique() %>% length()
+
+filter(multivariate, lrt_FDR <= 0.05) %>% pull(Gene) %>% unique() %>% sort() %>% 
+  writeLines("../data/clustersOfInterest/lrt_pass.txt")
+filter(multivariate, lrt_FDR > 0.05) %>% pull(Gene) %>% unique() %>% sort() %>% 
+  writeLines("../data/clustersOfInterest/lrt_fail.txt")
+
+make_top10DAVID("../data/clustersOfInterest/DAVIDChartReport_lrt_fail_2025-12-22.xlsx",
+                "lrt_fail.png")
+make_top10DAVID("../data/clustersOfInterest/DAVIDChartReport_lrt_pass_2025-12-22.xlsx",
+                "lrt_pass.png")
+```
+
+```{r check venn lobes}
+make_top10DAVID("../data/clustersOfInterest/DAVIDChartReport_venn_A549_only_2025-12-22.xlsx",
+                "venn_A549_only.png")
+
+make_top10DAVID("../data/clustersOfInterest/DAVIDChartReport_venn_looksConserved_2025-12-22.xlsx",
+                "venn_looksConserved.png")
+
+make_top10DAVID("../data/clustersOfInterest/DAVIDChartReport_venn_primaryOnly_2025-12-22.xlsx",
+                "venn_primaryOnly.png")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
