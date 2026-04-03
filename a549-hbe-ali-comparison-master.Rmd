@@ -12,4 +12,171 @@ knitr::opts_chunk$set(
 
 library(tidyverse)
 source("modules/helpers.R")
+library(ggVennDiagram)
+library(patchwork)
 ```
+
+All set up!!! Repo is at https://github.com/axg610/a549-hbe-ali-comparison.
+
+```{r load data}
+dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
+tpm <- read_tsv("data/raw/A549vsPrimary_tpm.txt")
+multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
+```
+
+## Alignment and DEA
+
+**Raw datasets:** A549, primary hBECs (submersion culture, HBE), and primary hBECs (air-liquid interface culture, ALI) treated with IL1B, glucocorticoid, or both at 6h. This is actually three experiments at different timepoints, so for now we use their shared timepoint (6 h post-treatment).
+
+Alignment performed with kallisto version 0.46.1 and normalization/DEA performed with sleuth version something on the cluster. Everything documented in `kallisto-sleuth.md`. I used individual sleuth runs for each cell type, modeled as `~treatment`. Effect sizes ("log2fold") and FDR are from Wald test using unstimulated (NS) samples as baseline. I also modeled everything together under model `~treatment*condition` for interaction testing. Finally, raw tpm values were extracted.
+
+```{r data previews}
+knitr::kable(
+  dea %>% filter(Gene == "NFKBIA"),
+  caption = "Example univariate DEA data (~treatment)", 
+  align = "c"
+)
+
+knitr::kable(
+  multivar %>% filter(Gene %in% c("NFKBIA", "TNFAIP3", "IRAK3")),
+  caption = "Example multivariate DEA data (~treatment)", 
+  align = "c"
+)
+
+knitr::kable(
+  tpm %>% filter(Gene == "NFKBIA") %>% .[1:20,],
+  caption = "Example tpm data, first 20 rows for representative gene", 
+  align = "c"
+)
+```
+
+## IN PROGRESS: Understanding individual variation in gene expression
+
+Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe only ~30% shared with the primary cell types. Venn diagram for "significant" genes (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type:
+
+```{r old venn, out.width='50%'}
+knitr::include_graphics("data/il1b-venn.png")
+```
+
+One possible reason: A549s are derived from one individual and four sequencing replicates will have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, meaning higher variability + lower significance. Ignoring FDR entirely, how similar is each individual primary cell replicate to the "consensus" A549 gene signature?
+
+First, check how many genes meet the log2fold threshold in each primary donor (or mean of A549s). Even without considering statistical significance, A549 cells have more than double the regulated genes of primary cells (see left panel). The variation in tpm-derived log2fold values between these genes tend to be lower (see right panel)
+
+```{r fig.height=3, fig.width=7}
+n_genes_summary <- tpm %>%
+  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+  filter(
+    treatment == "IL1B",
+    abs(log2fold) >= 1
+    ) %>%
+  group_by(Gene, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%    # unnecessary?
+  mutate(name = paste(celltype, rep)) %>%
+  group_by(name, rep, celltype) %>%
+  summarize(n = length(unique(Gene)), .groups = "drop") %>%
+  arrange(name) %>%
+  mutate(name = factor(name, levels = unique(name)))
+
+p1 <- ggplot(n_genes_summary, aes(y = name, x = n, fill = celltype, label = n)) +
+  geom_col() +
+  geom_text(hjust = 1.1) +
+  theme_minimal() +
+  labs(x = "genes with |log2fold| > 1", y = NULL) +
+  guides(fill = "none")
+
+sd_genes_summary <- tpm %>%
+  group_by(Gene) %>%
+  filter(
+    treatment == "IL1B",
+    any(abs(log2fold) >= 1)
+  ) %>%
+  select(Gene, celltype, log2fold) %>%
+  group_by(Gene, celltype) %>%
+  summarize(sd = sd(log2fold), .groups = "drop")
+
+p2 <- ggplot(sd_genes_summary, aes(y = celltype, x = sd, fill = celltype)) +
+  geom_violin(trim = TRUE, alpha = 0.7) +
+  geom_boxplot(width = 0.2, outliers = F) +
+  theme_minimal() +
+  labs(y = NULL, x = "SD of log2fold per gene") +
+  coord_cartesian(xlim = c(0, 3))
+
+wrap_plots(p1, p2, ncol = 2)
+
+cleanup_objects()
+```
+
+Something Rob asked for: for each primary cell donor, check overlap of genes with abs(log2fold) > 1 in that primary cell **(white)** vs A549 cells **(grey)**. I also tagged the plots with Jaccard index **(J)** and total number of genes **(n)**
+
+```{r fig.width=7}
+# build gene sets
+gene_sets <- tpm %>%
+  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+  filter(
+    treatment == "IL1B",
+    abs(log2fold) >= 1
+  ) %>%
+  group_by(Gene, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  mutate(name = paste(celltype, rep)) %>%
+  group_by(name) %>%
+  summarize(genes = list(unique(Gene)), .groups = "drop")
+
+# extract consensus gene set
+consensus_genes <- gene_sets %>%
+  pull(genes) %>%
+  .[[1]]
+
+# build summary table
+summary_tbl <- gene_sets %>%
+  filter(name != "A549 mean") %>%
+  mutate(
+    n_primary = map_int(genes, length),
+    overlap = map_int(genes, ~ length(intersect(consensus_genes, .x))),
+    union = map_int(genes, ~ length(union(consensus_genes, .x))),
+    jaccard = overlap / union,
+    title = paste0(
+      name,
+      "\nJ=", round(jaccard, 2),
+      " | n=", union
+    )
+  )
+
+# pairwise Venns against A549
+plots <- summary_tbl %>%
+  filter(name != "A549 mean") %>%
+  mutate(
+    plot = map2(genes, title, ~
+      ggVennDiagram(
+        list(
+          " " = consensus_genes,
+          "  " = .x
+        ),
+        label_alpha = 0,
+        label_size = 3
+      ) +
+      ggtitle(.y) +
+      scale_fill_gradient(low = "white", high = "grey50") +
+      theme(
+        legend.position = "none",
+        plot.title = element_text(size = 10, hjust = 0.5)
+      )
+    )
+  )
+
+# plot
+wrap_plots(plots$plot, ncol = 5)
+
+cleanup_objects()
+```
+
+
+
+
+
+
+
+
+
+
+
