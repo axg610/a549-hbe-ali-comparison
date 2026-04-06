@@ -18,6 +18,7 @@
 *.jpg
 *.jpeg
 *.svg
+*.html
 
 /data
 */*old/
