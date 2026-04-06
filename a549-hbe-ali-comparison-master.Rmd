@@ -10,13 +10,15 @@ knitr::opts_chunk$set(
   message = FALSE
 )
 
-library(tidyverse)
 source("modules/helpers.R")
 library(ggVennDiagram)
 library(patchwork)
+library(ComplexUpset)
+
+library(tidyverse)
 ```
 
-All set up!!! Repo is at https://github.com/axg610/a549-hbe-ali-comparison.
+<!-- All set up!!! Repo is at https://github.com/axg610/a549-hbe-ali-comparison. -->
 
 ```{r load data}
 dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
@@ -62,7 +64,7 @@ One possible reason: A549s are derived from one individual and four sequencing r
 
 First, check how many genes meet the log2fold threshold in each primary donor (or mean of A549s). Even without considering statistical significance, A549 cells have more than double the regulated genes of primary cells (see left panel). The variation in tpm-derived log2fold values between these genes tend to be lower (see right panel)
 
-```{r fig.height=3, fig.width=7}
+```{r num and sd per donor, fig.height=3, fig.width=7}
 n_genes_summary <- tpm %>%
   mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
   filter(
@@ -108,7 +110,7 @@ cleanup_objects()
 
 Something Rob asked for: for each primary cell donor, check overlap of genes with abs(log2fold) > 1 in that primary cell **(white)** vs A549 cells **(grey)**. I also tagged the plots with Jaccard index **(J)** and total number of genes **(n)**
 
-```{r fig.width=7}
+```{r pairwise venns fig.width=7}
 # build gene sets
 gene_sets <- tpm %>%
   mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
@@ -169,6 +171,160 @@ wrap_plots(plots$plot, ncol = 5)
 
 cleanup_objects()
 ```
+
+Visualize set relations: where does the IL1B-"regulated" transcriptional profile of each donor sit in relation to all other donors? In relation to the A549 mean?
+
+**TODO: clean up UpSet plot code. What do we actually want to intersect?**
+
+```{r upset plot}
+
+# TODO: clean this up
+
+gene_sets_upset <- tpm %>%
+  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+  filter(
+    treatment == "IL1B",
+    abs(log2fold) >= 1,
+    celltype %in% c("A549", "ALI")
+  ) %>%
+  group_by(Gene, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  mutate(name = paste(celltype, rep)) %>%
+  group_by(name) %>%
+  summarize(genes = list(unique(Gene)), .groups = "drop") %>%
+  unnest(genes) %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    names_from = name,
+    values_from = value,
+    values_fill = 0
+  )
+
+upset(
+  gene_sets_upset,
+  intersect = colnames(gene_sets_upset)[-1],
+  name = "Shared genes",
+  width_ratio = 0.2,
+  min_size = 50
+)
+
+gene_sets_upset <- tpm %>%
+  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+  filter(
+    treatment == "IL1B",
+    abs(log2fold) >= 1,
+    celltype %in% c("A549", "HBE")
+  ) %>%
+  group_by(Gene, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  mutate(name = paste(celltype, rep)) %>%
+  group_by(name) %>%
+  summarize(genes = list(unique(Gene)), .groups = "drop") %>%
+  unnest(genes) %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    names_from = name,
+    values_from = value,
+    values_fill = 0
+  )
+
+upset(
+  gene_sets_upset,
+  intersect = colnames(gene_sets_upset)[-1],
+  name = "Shared genes",
+  width_ratio = 0.2,
+  min_size = 50
+)
+
+gene_sets_upset <- tpm %>%
+  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+  filter(
+    treatment == "IL1B",
+    abs(log2fold) >= 1,
+    celltype %in% c("ALI", "HBE")
+  ) %>%
+  group_by(Gene, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  mutate(name = paste(celltype, rep)) %>%
+  group_by(name) %>%
+  summarize(genes = list(unique(Gene)), .groups = "drop") %>%
+  unnest(genes) %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    names_from = name,
+    values_from = value,
+    values_fill = 0
+  )
+
+upset(
+  gene_sets_upset,
+  intersect = colnames(gene_sets_upset)[-1],
+  name = "Shared genes",
+  width_ratio = 0.2,
+  min_size = 50
+)
+
+cleanup_objects()
+```
+
+Rob: *"Something I don’t understand: The number of A549 DEGs has jumped from about 2600 in the first analysis (Venn) to 8200 here (above analysis)?? Something wrong? Is the artificial baseline (tpm 0.1 or 0.01) at play here? The simple tpm calculation will then include many very lowly expressed genes…..?"*
+
+Baseline is 0.1, code snippet below:
+
+```{text, echo=T, eval=F}
+
+  ...
+    filter(!all(tpm == 0)) %>%
+    ungroup() %>%
+    mutate(log2tpm = log2(tpm + 0.1)) %>%
+    group_by(Gene, celltype) %>%
+    mutate(log2fold = log2tpm - log2tpm[treatment == "NS"]) %>%
+    ungroup() %>%
+    mutate(fold = 2^log2fold) %>%
+  ...
+```
+
+
+```{r discrepancy in gene number}
+gene_to_fdr <- dea %>%
+  filter(treatment == "IL1B") %>%
+  select(Gene, celltype, FDR)
+
+df <- tpm %>%
+  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+  filter(treatment == "IL1B") %>%
+  mutate(name = paste(celltype, rep)) %>%
+  group_by(Gene, rep, celltype, name) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  ungroup() %>%
+  filter(
+    treatment == "IL1B",
+    abs(log2fold) >= 1
+  ) %>%
+  left_join(gene_to_fdr, by = c("Gene", "celltype")) %>%
+  mutate(FDR = if_else(is.na(FDR), 1, FDR)) %>%
+  mutate(sig = FDR <= 0.05)
+
+ggplot(
+  df,
+  aes(x = log2fold, fill = sig)
+) +
+  facet_wrap(~name, scales = "free") +
+  geom_histogram()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
