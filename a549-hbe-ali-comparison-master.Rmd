@@ -64,47 +64,44 @@ One possible reason: A549s are derived from one individual, so four sequencing r
 
 *Fixed problem 040626: discrepancy between Venn and spread gene counts.*
 
-```{r log2fold threshold on a per-donor basis, fig.height=3, fig.width=8}
-tpm_by_donor <- tpm %>%
+```{r initialize per-donor data}
+per_donor_data <- list()
+
+per_donor_data[["tpm_by_donor"]] <- tpm %>%
   filter(treatment == "IL1B") %>%
   mutate(rep = if_else(celltype == "A549", "mean", rep)) %>%
   mutate(name = paste(celltype, rep)) %>%
   select(Gene, name, rep, celltype, treatment, tpm, log2tpm, fold, log2fold)
   
-donors_l2f <- tpm_by_donor %>%
+per_donor_data[["thresholded_log2fold"]] <- tpm_by_donor %>%
   group_by(Gene, name, rep, celltype) %>%
   summarize(log2fold = mean(log2fold), .groups = "drop") %>%
   mutate(meets_threshold = abs(log2fold) >= 1)
 
+cleanup_objects()
+```
 
 
+```{r log2fold threshold on a per-donor basis, fig.height=3, fig.width=8}
 
-donors_l2f_counts <- donors_l2f %>%
+# counts: how many threshold-meeting genes in each donor?
+counts <- per_donor_data[["thresholded_log2fold"]] %>%
   filter(meets_threshold) %>%
   group_by(name, rep, celltype) %>%
   summarize(n = length(unique(Gene)), .groups = "drop") %>%
   arrange(name) %>%
   mutate(name = factor(name, levels = unique(name)))
 
-p1 <- ggplot(
-  donors_l2f_counts, 
-  aes(y = name, x = n, fill = celltype, label = n)
-) +
-  geom_col() +
-  geom_text(hjust = 1.1) +
-  theme_minimal() +
-  labs(x = "genes with |log2fold| > 1", y = NULL, title = "A") +
-  guides(fill = "none")
-
-
-
-donors_l2f_spread <- donors_l2f %>%
+# spread: sd and %meetingThreshold for each gene, in each celltype
+spread <- per_donor_data[["thresholded_log2fold"]] %>%
   group_by(Gene, celltype) %>%
   filter(any(meets_threshold)) %>%
   ungroup() %>%
   select(-log2fold) %>%
   distinct() %>%
-  left_join(tpm_by_donor) %>%
+  left_join(
+    per_donor_data[["tpm_by_donor"]]
+  ) %>%
   group_by(Gene, celltype) %>%
   summarize(
     sd = sd(log2fold),
@@ -114,8 +111,21 @@ donors_l2f_spread <- donors_l2f %>%
     .groups = "drop"
   )
 
+
+# plots
+
+p1 <- ggplot(
+  counts, 
+  aes(y = name, x = n, fill = celltype, label = n)
+) +
+  geom_col() +
+  geom_text(hjust = 1.1) +
+  theme_minimal() +
+  labs(x = "genes with |log2fold| > 1", y = NULL, title = "A") +
+  guides(fill = "none")
+
 p2 <- ggplot(
-  donors_l2f_spread,
+  spread,
   aes(y = celltype, x = sd, fill = celltype)
 ) +
   geom_jitter(size = 0.1, height = 0.3, alpha = 0.7) +
@@ -127,7 +137,7 @@ p2 <- ggplot(
   guides(fill = "none")
 
 p3 <- ggplot(
-  donors_l2f_spread,
+  spread,
   aes(y = celltype, x = percent_meets_threshold, fill = celltype)
 ) +
   stat_summary(
@@ -143,36 +153,33 @@ p3 <- ggplot(
   labs(y = NULL, x = "% donors with |log2fold| > 1", title = "C")
 
 wrap_plots(p1, p2, p3, nrow = 1)
+
+cleanup_objects()
 ```
 
 Something Rob asked for: for each primary cell donor, check overlap of genes with abs(log2fold) > 1 in that primary cell **(white)** vs A549 cells **(grey)**. I also tagged the plots with Jaccard index **(J)** and total number of genes **(n)**
 
 ```{r pairwise venns fig.width=7}
-# build gene sets
-gene_sets <- tpm %>%
-  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
-  filter(
-    treatment == "IL1B",
-    abs(log2fold) >= 1
-  ) %>%
-  group_by(Gene, rep, celltype) %>%
-  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
-  mutate(name = paste(celltype, rep)) %>%
+
+# sets: which genes meet the log2fold threshold in each donor?
+sets <- per_donor_data[["thresholded_log2fold"]] %>%
+  filter(meets_threshold) %>%
   group_by(name) %>%
   summarize(genes = list(unique(Gene)), .groups = "drop")
 
-# extract consensus gene set
-consensus_genes <- gene_sets %>%
+# a549 genes: the set against which all other sets will be compared
+a549_genes <- sets %>%
+  filter(name == "A549 mean") %>%
   pull(genes) %>%
   .[[1]]
 
-# build summary table
-summary_tbl <- gene_sets %>%
-  filter(name != "A549 mean") %>%
+# overlaps: how does each donor interact with the A549 consensus?
+overlaps <- sets %>%
   mutate(
-    n_primary = map_int(genes, length),
-    overlap = map_int(genes, ~ length(intersect(consensus_genes, .x))),
-    union = map_int(genes, ~ length(union(consensus_genes, .x))),
+    n_genes = map_int(genes, length),
+    overlap_genes = map(genes, ~ intersect(a549_genes, .x)),
+    overlap = map_int(genes, ~ length(intersect(a549_genes, .x))),
+    union = map_int(genes, ~ length(union(a549_genes, .x))),
     jaccard = overlap / union,
     title = paste0(
       name,
@@ -181,33 +188,43 @@ summary_tbl <- gene_sets %>%
     )
   )
 
-# pairwise Venns against A549
-plots <- summary_tbl %>%
-  filter(name != "A549 mean") %>%
+# plots
+
+plots <- overlaps %>%
   mutate(
-    plot = map2(genes, title, ~
-      ggVennDiagram(
+    p = map2(
+      genes,
+      title,
+      ~ ggVennDiagram(
         list(
-          " " = consensus_genes,
+          " " = a549_genes,
           "  " = .x
         ),
         label_alpha = 0,
         label_size = 3
       ) +
-      ggtitle(.y) +
-      scale_fill_gradient(low = "white", high = "grey50") +
-      theme(
-        legend.position = "none",
-        plot.title = element_text(size = 10, hjust = 0.5)
-      )
+        ggtitle(.y) +
+        scale_fill_gradient(low = "white", high = "grey50") +
+        theme(
+          legend.position = "none",
+          plot.title = element_text(size = 10, hjust = 0.5)
+        )
     )
   )
 
-# plot
-wrap_plots(plots$plot, ncol = 5)
+wrap_plots(plots$p, ncol = 6)
 
 cleanup_objects()
 ```
+
+
+
+
+
+
+
+
+
 
 Visualize set relations: where does the IL1B-"regulated" transcriptional profile of each donor sit in relation to all other donors? In relation to the A549 mean?
 
