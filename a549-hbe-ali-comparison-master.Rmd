@@ -60,52 +60,89 @@ Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe
 knitr::include_graphics("data/il1b-venn.png")
 ```
 
-One possible reason: A549s are derived from one individual and four sequencing replicates will have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, meaning higher variability + lower significance. Ignoring FDR entirely, how similar is each individual primary cell replicate to the "consensus" A549 gene signature?
+One possible reason: A549s are derived from one individual, so four sequencing replicates may have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, so higher variability + lower significance. Ignoring FDR entirely (i.e., only using the abs(log2fold) >= 1 threshold), A549 and primary cells actually have similarly sized regulated gene pools (Fig A). In A549s, variation in tpm-derived log2fold values tend to be lower (Fig B) and a greater proportion of the rep pool meets log2fold thresholds (Fig C).
 
-First, check how many genes meet the log2fold threshold in each primary donor (or mean of A549s). Even without considering statistical significance, A549 cells have more than double the regulated genes of primary cells (see left panel). The variation in tpm-derived log2fold values between these genes tend to be lower (see right panel)
+*Fixed problem 040626: discrepancy between Venn and spread gene counts.*
 
-```{r num and sd per donor, fig.height=3, fig.width=7}
-n_genes_summary <- tpm %>%
-  mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
-  filter(
-    treatment == "IL1B",
-    abs(log2fold) >= 1
-    ) %>%
-  group_by(Gene, rep, celltype) %>%
-  summarize(log2fold = mean(log2fold), .groups = "drop") %>%    # unnecessary?
+```{r log2fold threshold on a per-donor basis, fig.height=3, fig.width=8}
+tpm_by_donor <- tpm %>%
+  filter(treatment == "IL1B") %>%
+  mutate(rep = if_else(celltype == "A549", "mean", rep)) %>%
   mutate(name = paste(celltype, rep)) %>%
+  select(Gene, name, rep, celltype, treatment, tpm, log2tpm, fold, log2fold)
+  
+donors_l2f <- tpm_by_donor %>%
+  group_by(Gene, name, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  mutate(meets_threshold = abs(log2fold) >= 1)
+
+
+
+
+donors_l2f_counts <- donors_l2f %>%
+  filter(meets_threshold) %>%
   group_by(name, rep, celltype) %>%
   summarize(n = length(unique(Gene)), .groups = "drop") %>%
   arrange(name) %>%
   mutate(name = factor(name, levels = unique(name)))
 
-p1 <- ggplot(n_genes_summary, aes(y = name, x = n, fill = celltype, label = n)) +
+p1 <- ggplot(
+  donors_l2f_counts, 
+  aes(y = name, x = n, fill = celltype, label = n)
+) +
   geom_col() +
   geom_text(hjust = 1.1) +
   theme_minimal() +
-  labs(x = "genes with |log2fold| > 1", y = NULL) +
+  labs(x = "genes with |log2fold| > 1", y = NULL, title = "A") +
   guides(fill = "none")
 
-sd_genes_summary <- tpm %>%
-  group_by(Gene) %>%
-  filter(
-    treatment == "IL1B",
-    any(abs(log2fold) >= 1)
-  ) %>%
-  select(Gene, celltype, log2fold) %>%
+
+
+donors_l2f_spread <- donors_l2f %>%
   group_by(Gene, celltype) %>%
-  summarize(sd = sd(log2fold), .groups = "drop")
+  filter(any(meets_threshold)) %>%
+  ungroup() %>%
+  select(-log2fold) %>%
+  distinct() %>%
+  left_join(tpm_by_donor) %>%
+  group_by(Gene, celltype) %>%
+  summarize(
+    sd = sd(log2fold),
+    n_meets_threshold = length(Gene[abs(log2fold) >= 1]),
+    nreps = length(Gene),
+    percent_meets_threshold = 100 * n_meets_threshold / nreps,
+    .groups = "drop"
+  )
 
-p2 <- ggplot(sd_genes_summary, aes(y = celltype, x = sd, fill = celltype)) +
-  geom_violin(trim = TRUE, alpha = 0.7) +
-  geom_boxplot(width = 0.2, outliers = F) +
+p2 <- ggplot(
+  donors_l2f_spread,
+  aes(y = celltype, x = sd, fill = celltype)
+) +
+  geom_jitter(size = 0.1, height = 0.3, alpha = 0.7) +
+  geom_violin(trim = TRUE, alpha = 0.7, color = "black") +
+  geom_boxplot(width = 0.2, outliers = F, alpha = 0.7, color = "black") +
   theme_minimal() +
-  labs(y = NULL, x = "SD of log2fold per gene") +
-  coord_cartesian(xlim = c(0, 3))
+  labs(y = NULL, x = "SD of log2fold across donors", title = "B") +
+  coord_cartesian(xlim = c(0, 3)) +
+  guides(fill = "none")
 
-wrap_plots(p1, p2, ncol = 2)
+p3 <- ggplot(
+  donors_l2f_spread,
+  aes(y = celltype, x = percent_meets_threshold, fill = celltype)
+) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_sdl",
+    fun.args = list(mult = 1), 
+    width = 0.5
+    ) +
+  stat_summary(
+    geom = "col", fun = "mean",
+    color = "black"
+    ) +
+  theme_minimal() +
+  labs(y = NULL, x = "% donors with |log2fold| > 1", title = "C")
 
-cleanup_objects()
+wrap_plots(p1, p2, p3, nrow = 1)
 ```
 
 Something Rob asked for: for each primary cell donor, check overlap of genes with abs(log2fold) > 1 in that primary cell **(white)** vs A549 cells **(grey)**. I also tagged the plots with Jaccard index **(J)** and total number of genes **(n)**
@@ -290,17 +327,27 @@ gene_to_fdr <- dea %>%
   filter(treatment == "IL1B") %>%
   select(Gene, celltype, FDR)
 
+# df <- tpm %>%
+#   mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
+#   filter(treatment == "IL1B") %>%
+#   mutate(name = paste(celltype, rep)) %>%
+#   group_by(Gene, rep, celltype, name) %>%
+#   summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+#   ungroup() %>%
+#   filter(
+#     abs(log2fold) >= 1
+#   ) %>%
+#   left_join(gene_to_fdr, by = c("Gene", "celltype")) %>%
+#   mutate(FDR = if_else(is.na(FDR), 1, FDR)) %>%
+#   mutate(sig = FDR <= 0.05)
+
 df <- tpm %>%
   mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>%
-  filter(treatment == "IL1B") %>%
+  filter(treatment == "IL1B", abs(log2fold) >= 1) %>%
   mutate(name = paste(celltype, rep)) %>%
   group_by(Gene, rep, celltype, name) %>%
   summarize(log2fold = mean(log2fold), .groups = "drop") %>%
   ungroup() %>%
-  filter(
-    treatment == "IL1B",
-    abs(log2fold) >= 1
-  ) %>%
   left_join(gene_to_fdr, by = c("Gene", "celltype")) %>%
   mutate(FDR = if_else(is.na(FDR), 1, FDR)) %>%
   mutate(sig = FDR <= 0.05)
@@ -309,7 +356,7 @@ ggplot(
   df,
   aes(x = log2fold, fill = sig)
 ) +
-  facet_wrap(~name, scales = "free") +
+  facet_wrap(~name, scales = "free_x") +
   geom_histogram()
 ```
 
