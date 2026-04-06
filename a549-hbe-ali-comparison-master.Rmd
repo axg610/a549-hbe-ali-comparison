@@ -322,7 +322,6 @@ cleanup_objects()
 54 "universally" shared genes from above:
 
 ```{r}
-# 54 universally-shared genes:
 per_donor_data[["logical_matrix"]] %>%
   filter(if_all(everything(), ~ .x == 1)) %>%
   rownames()
@@ -331,11 +330,23 @@ per_donor_data[["logical_matrix"]] %>%
 70 donor-shared genes from above:
 
 ```{r}
-# 70 donor-shared genes:
 per_donor_data[["logical_matrix"]] %>%
   select(-`A549 mean`) %>%
   filter(if_all(everything(), ~ .x == 1)) %>%
   rownames()
+```
+16 (70-54) donor-only genes:
+
+```{r}
+setdiff(
+  per_donor_data[["logical_matrix"]] %>%
+    select(-`A549 mean`) %>%
+    filter(if_all(everything(), ~ .x == 1)) %>%
+    rownames(),
+  per_donor_data[["logical_matrix"]] %>%
+    filter(if_all(everything(), ~ .x == 1)) %>%
+    rownames()
+)
 ```
 
 <!-- Rob: *"Something I don’t understand: The number of A549 DEGs has jumped from about 2600 in the first analysis (Venn) to 8200 here (above analysis)?? Something wrong? Is the artificial baseline (tpm 0.1 or 0.01) at play here? The simple tpm calculation will then include many very lowly expressed genes…..?"* -->
