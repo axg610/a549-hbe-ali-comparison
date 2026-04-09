@@ -59,11 +59,9 @@ knitr::kable(
 
 ## IN PROGRESS: Understanding individual variation in gene expression
 
-Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe only ~30% shared with the primary cell types. Venn diagram for "significant" genes (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type:
+Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe only ~30% shared with the primary cell types. See Venn diagrams below for DEGs (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type (panel A), up-DEGs (panel B), and down-DEGs (panel C). When looking for "regulation" in general, A549s look very different from primary cells. Splitting into up- and down-regulated groups reveals that most of this difference is attributable to downregulated genes. i.e., A549s are a reasonable model for IL1B-responsive gene induction but not suppression in primary cells.
 
-*TODO: separate up- and down-regulated Venns*
-
-```{r old venn, fig.height=5, fig.width=5}
+```{r old venn, fig.height=4, fig.width=5}
 # knitr::include_graphics("data/il1b-venn.png")
 
 dea_to_euler <- function(input, shapeType = "circle", plotTitle = "title"){
@@ -82,10 +80,7 @@ dea_to_euler <- function(input, shapeType = "circle", plotTitle = "title"){
       values_fill = NA
     ) %>%
     rowwise() %>%
-    summarize(
-      group = paste(na.omit(c_across(-Gene)), collapse = "&"),
-      .groups = "drop"
-    ) %>%
+    mutate(group = paste(na.omit(c_across(-Gene)), collapse = "&")) %>%
     count(group) %>%
     deframe() %>%
     euler(shape = shapeType)
@@ -105,9 +100,7 @@ dea %>%
     FDR <= 0.05,
     abs(log2fold) >= 1
   ) %>%
-  dea_to_euler(
-    plotTitle = "IL1B-regulated genes at 6h"
-  )
+  dea_to_euler(plotTitle = "(A) IL1B-regulated genes at 6h")
 
 dea %>%
   filter(
@@ -115,9 +108,7 @@ dea %>%
     FDR <= 0.05,
     log2fold >= 1
   ) %>%
-  dea_to_euler(
-    plotTitle = "IL1B-upregulated genes at 6h"
-  )
+  dea_to_euler(plotTitle = "(B) IL1B-upregulated genes at 6h")
 
 dea %>%
   filter(
@@ -125,14 +116,12 @@ dea %>%
     FDR <= 0.05,
     log2fold <= -1
   ) %>%
-  dea_to_euler(
-    plotTitle = "IL1B-downregulated genes at 6h"
-  )
+  dea_to_euler(plotTitle = "(C) IL1B-downregulated genes at 6h")
 
 cleanup_objects()
 ```
 
-One possible reason: A549s are derived from one individual, so four sequencing replicates may have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, so higher variability + lower significance. Ignoring FDR entirely (i.e., only using the abs(log2fold) >= 1 threshold), A549 and primary cells actually have similarly sized regulated gene pools (panel A). In A549s, variation in tpm-derived log2fold values tend to be lower (panel B) and a greater proportion of the rep pool meets log2fold thresholds (panel C).
+One possible reason for differences: A549s are derived from one individual, so four sequencing replicates may have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, so higher variability + lower significance. Ignoring FDR entirely (i.e., only using the abs(log2fold) >= 1 threshold), A549 and primary cells actually have similarly sized regulated gene pools (panel A). In A549s, variation in tpm-derived log2fold values tend to be lower (panel B) and a greater proportion of the rep pool meets log2fold thresholds (panel C).
 
 *Fixed: problem 040626, discrepancy between Venn and spread gene counts.*
 
@@ -152,7 +141,6 @@ per_donor_data[["thresholded_log2fold"]] <- per_donor_data[["tpm_by_donor"]] %>%
 
 cleanup_objects()
 ```
-
 
 ```{r log2fold threshold on a per-donor basis, fig.height=3, fig.width=8}
 
@@ -241,18 +229,45 @@ cleanup_objects()
 ```{r pairwise venns vs a549, fig.width=8}
 
 # sets: which genes meet the log2fold threshold in each donor?
+# for two-tailed, upregulated, and downregulated cases
+
 sets <- per_donor_data[["thresholded_log2fold"]] %>%
-  filter(meets_threshold) %>%
+  filter(abs(log2fold) >= 1) %>%
   group_by(name, celltype, rep) %>%
   summarize(genes = list(unique(Gene)), .groups = "drop")
 
+sets_upreg <- per_donor_data[["thresholded_log2fold"]] %>%
+  filter(log2fold >= 1) %>%
+  group_by(name, celltype, rep) %>%
+  summarize(genes = list(unique(Gene)), .groups = "drop")
+
+sets_downreg <- per_donor_data[["thresholded_log2fold"]] %>%
+  filter(log2fold <= -1) %>%
+  group_by(name, celltype, rep) %>%
+  summarize(genes = list(unique(Gene)), .groups = "drop")
+  
+
 # a549 genes: the set against which all other sets will be compared
+# for two-tailed, upregulated, and downregulated cases
+
 a549_genes <- sets %>%
   filter(name == "A549 mean") %>%
   pull(genes) %>%
   .[[1]]
 
+a549_genes_upreg <- sets_upreg %>%
+  filter(name == "A549 mean") %>%
+  pull(genes) %>%
+  .[[1]]
+
+a549_genes_downreg <- sets_downreg %>%
+  filter(name == "A549 mean") %>%
+  pull(genes) %>%
+  .[[1]]
+
 # overlaps: how does each donor interact with the A549 consensus?
+# for two-tailed, upregulated, and downregulated cases
+
 overlaps <- sets %>%
   mutate(
     n_genes = map_int(genes, length),
@@ -267,34 +282,98 @@ overlaps <- sets %>%
     )
   )
 
+overlaps_upreg <- sets_upreg %>%
+  mutate(
+    n_genes = map_int(genes, length),
+    overlap_genes = map(genes, ~ intersect(a549_genes_upreg, .x)),
+    overlap = map_int(genes, ~ length(intersect(a549_genes_upreg, .x))),
+    union = map_int(genes, ~ length(union(a549_genes_upreg, .x))),
+    jaccard = overlap / union,
+    title = paste0(
+      name,
+      "\nJ=", round(jaccard, 2),
+      " | n=", union
+    )
+  )
+
+overlaps_downreg <- sets_downreg %>%
+  mutate(
+    n_genes = map_int(genes, length),
+    overlap_genes = map(genes, ~ intersect(a549_genes_downreg, .x)),
+    overlap = map_int(genes, ~ length(intersect(a549_genes_downreg, .x))),
+    union = map_int(genes, ~ length(union(a549_genes_downreg, .x))),
+    jaccard = overlap / union,
+    title = paste0(
+      name,
+      "\nJ=", round(jaccard, 2),
+      " | n=", union
+    )
+  )
+
 # write overlaps to the main per-donor object
+
 per_donor_data[["overlaps"]] <- overlaps
+per_donor_data[["overlaps_upreg"]] <- overlaps_upreg
+per_donor_data[["overlaps_downreg"]] <- overlaps_downreg
 
 # plots
 
-plots <- overlaps %>%
-  mutate(
+plot_pairwise_venns <- function(
+    inputOverlaps, 
+    referenceGroup = a549_genes,
+    plotTitle = "title here"){
+  
+  # take an overlaps dataframe from above and create an array of pairwise
+  # venn digrams using ggVennDiagram.
+  
+  # must specify the reference group (the bottom venn lobe)
+  
+  plots <- inputOverlaps %>%
+    mutate(
     p = map2(
       genes,
       title,
       ~ ggVennDiagram(
         list(
-          " " = a549_genes,
+          " " = referenceGroup,
           "  " = .x
         ),
         label_alpha = 0,
         label_size = 3
       ) +
         ggtitle(.y) +
-        scale_fill_gradient(low = "white", high = "white") +
+        scale_fill_gradient(low = "white", high = "grey50") +
         theme(
           legend.position = "none",
           plot.title = element_text(size = 10, hjust = 0.5)
         )
     )
   )
+  
+  print(
+    wrap_plots(plots$p, ncol = 6) +
+      plot_annotation(title = plotTitle)
+    )
+  
+}
 
-wrap_plots(plots$p, ncol = 6)
+plot_pairwise_venns(
+  overlaps,         
+  a549_genes, 
+  "(A) Pairwise Venns for IL1B-reg genes: abs(log2fold) >= 1, donor (top) vs A549 (bottom)"
+  )
+
+plot_pairwise_venns(
+  overlaps_upreg,   
+  a549_genes_upreg, 
+  "(B) Pairwise Venns for IL1B-upreg genes: log2fold >= 1, donor (top) vs A549 (bottom)"
+  )
+
+plot_pairwise_venns(
+  overlaps_downreg, 
+  a549_genes_downreg, 
+  "(C) Pairwise Venns for IL1B-downreg genes: log2fold <= -1, donor (top) vs A549 (bottom)"
+  )
 
 cleanup_objects()
 ```
