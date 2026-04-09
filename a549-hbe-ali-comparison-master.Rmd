@@ -61,62 +61,56 @@ knitr::kable(
 
 Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe only ~30% shared with the primary cell types. See Venn diagrams below for DEGs (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type (panel A), up-DEGs (panel B), and down-DEGs (panel C). When looking for "regulation" in general, A549s look very different from primary cells. Splitting into up- and down-regulated groups reveals that most of this difference is attributable to downregulated genes. i.e., A549s are a reasonable model for IL1B-responsive gene induction but not suppression in primary cells.
 
-```{r old venn, fig.height=4, fig.width=5}
+```{r old venns, fig.height=4, fig.width=5}
+
 # knitr::include_graphics("data/il1b-venn.png")
 
-dea_to_euler <- function(input, shapeType = "circle", plotTitle = "title"){
-  
-  # takes some rows from DEA and returns a eulerr plot showing interactions
-  # between A549, ALI, and HBE
-  
-  obj <- input %>%
-    group_by(celltype) %>%
-    summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
-    unnest(Gene) %>%
-    mutate(value = celltype) %>%
-    pivot_wider(
-      names_from = "celltype",
-      values_from = "value",
-      values_fill = NA
-    ) %>%
-    rowwise() %>%
-    mutate(group = paste(na.omit(c_across(-Gene)), collapse = "&")) %>%
-    count(group) %>%
-    deframe() %>%
-    euler(shape = shapeType)
-  
-  plot(
-    obj,
-    quantities = list(type = c("counts")),
-    main = plotTitle,
-    asp = 1
-    )
-  
-}
+# create logical matrices
 
-dea %>%
+reg <- dea %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,
     abs(log2fold) >= 1
   ) %>%
-  dea_to_euler(plotTitle = "(A) IL1B-regulated genes at 6h")
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
 
-dea %>%
+upreg <- dea %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,
     log2fold >= 1
   ) %>%
-  dea_to_euler(plotTitle = "(B) IL1B-upregulated genes at 6h")
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
 
-dea %>%
+downreg <- dea %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,
     log2fold <= -1
   ) %>%
-  dea_to_euler(plotTitle = "(C) IL1B-downregulated genes at 6h")
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+# plot
+
+plot_euler(reg, plotTitle = "(A) IL1B-regulated genes at 6h")
+plot_euler(upreg, plotTitle = "(B) IL1B-upregulated genes at 6h")
+plot_euler(downreg, plotTitle = "(C) IL1B-downregulated genes at 6h")
 
 cleanup_objects()
 ```
@@ -471,84 +465,39 @@ logical_matrix_downreg <- per_donor_data[["overlaps_downreg"]] %>%
   column_to_rownames("genes")
 
 # an extra matrix where A549 and related genes are excluded
+
 a5_exclude <- logical_matrix %>%
+  select(-`A549 mean`) %>%
+  filter(!if_all(everything(), ~ .x == 0))
+
+a5_exclude_upreg <- logical_matrix_upreg %>%
+  select(-`A549 mean`) %>%
+  filter(!if_all(everything(), ~ .x == 0))
+
+a5_exclude_downreg <- logical_matrix_downreg %>%
   select(-`A549 mean`) %>%
   filter(!if_all(everything(), ~ .x == 0))
   
 # write logical matrices to the main per-donor object
 
 per_donor_data[["logical_matrix"]] <- logical_matrix
-per_donor_data[["logical_matrix_a5Exclude"]] <- a5_exclude
 per_donor_data[["logical_matrix_upreg"]] <- logical_matrix_upreg
 per_donor_data[["logical_matrix_downreg"]] <- logical_matrix_downreg
+
+per_donor_data[["logical_matrix_a5Exclude"]] <- a5_exclude
+per_donor_data[["logical_matrix_a5Exclude_upreg"]] <- a5_exclude_upreg
+per_donor_data[["logical_matrix_a5Exclude_downreg"]] <- a5_exclude_downreg
+
+cleanup_objects()
 ```
 
 
-```{r upset plots between donors, fig.height=8, fig.width=6}
+```{r upset plots between donors, fig.height=8, fig.width=7}
 
 # plots
 
-plot_upset(logical_matrix, plotTitle = "A")
-
-p1 <- suppressWarnings(
-  upset(
-    logical_matrix,
-    intersect = colnames(logical_matrix),
-    min_size = 50,
-    set_sizes = F,
-    height_ratio = 0.75,
-    wrap = T,
-    base_annotations = list(
-      "intersection size" = intersection_size(
-        text = list(
-          color = "black",
-          angle = 90, 
-          vjust = 0.5,
-          hjust = -0.3,
-          size = 3
-        )
-      )
-    )) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_blank(),
-      axis.title.x = element_blank(),
-      axis.title.y = element_blank(),
-      panel.grid.minor = element_blank(),
-      plot.title = element_text(size = 20, hjust = 0.05)
-    ) +
-    labs(title = "A")
-)
-
-p2 <- suppressWarnings(
-  upset(
-    a5_exclude,
-    intersect = colnames(a5_exclude),
-    min_size = 50,
-    set_sizes = F,
-    height_ratio = 0.75,
-    wrap = T,
-    base_annotations = list(
-      "intersection size" = intersection_size(
-        text = list(
-          color = "black",
-          angle = 90, 
-          vjust = 0.5,
-          hjust = -0.3,
-          size = 3
-        )
-      )
-    )) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_blank(),
-      axis.title.x = element_blank(),
-      axis.title.y = element_blank(),
-      panel.grid.minor = element_blank(),
-      plot.title = element_text(size = 20, hjust = 0.05)
-    ) +
-    labs(title = "B")
-)
+p1 <- plot_upset(logicalMatrix = per_donor_data[["logical_matrix"]], plotTitle = "A")
+p2 <- plot_upset(per_donor_data[["logical_matrix_a5Exclude"]], plotTitle = "B")
 
 wrap_plots(p1, p2, nrow = 2)
 
@@ -571,6 +520,7 @@ per_donor_data[["logical_matrix"]] %>%
   filter(if_all(everything(), ~ .x == 1)) %>%
   rownames()
 ```
+
 16 (70-54) donor-only genes:
 
 ```{r}
@@ -584,6 +534,23 @@ setdiff(
     rownames()
 )
 ```
+
+Now split the visualization down from all regulated genes to upregulated and downregulated genes (see below). Notice how 50 of the 54 "universally shared" genes present in the upregulated fraction (panel A), and 70 of 70 "donor-shared" genes present in the upregulated fraction (panel C). However, DEGs unique to each donor still dominate over DEGs shared between donors.
+
+```{r, fig.height=8, fig.width=9}
+
+p1 <- plot_upset(logicalMatrix = per_donor_data[["logical_matrix_upreg"]], plotTitle = "(A) IL1B-upregulated")
+p2 <- plot_upset(logicalMatrix = per_donor_data[["logical_matrix_downreg"]], plotTitle = "(B) IL1B-downregulated")
+
+
+p3 <- plot_upset(per_donor_data[["logical_matrix_a5Exclude_upreg"]], plotTitle = "(C) IL1B-upreg, primary only")
+p4 <- plot_upset(per_donor_data[["logical_matrix_a5Exclude_downreg"]], plotTitle = "(D) IL1B-downreg, primary only")
+
+wrap_plots(p1, p2, p3, p4, nrow = 2)
+
+cleanup_objects()
+```
+
 
 *TODO: visualize as a rough Euler plot*
 

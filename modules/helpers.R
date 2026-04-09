@@ -49,6 +49,38 @@ plot_upset <- function(logicalMatrix, minSize = 50, plotTitle = "title here"){
   )
 }
 
+plot_euler <- function(
+    logicalMatrix, 
+    shapeType = "circle", 
+    plotTitle = "title here",
+    quants = c("counts")
+){
+  
+  # a wrapper for the eulerr:euler function to create a Euler diagram given a
+  # logical matrix specifying groups as colnames, presence/absence as 1/0, and
+  # gene names as rownames.
+  
+  obj <- logicalMatrix %>%
+    mutate(
+      across(
+        everything(),
+        ~ ifelse(. == 1, cur_column(), NA)
+      )
+    ) %>%
+    rowwise() %>%
+    mutate(group = paste(na.omit(c_across(cols = everything())), collapse = "&")) %>%
+    count(group) %>%
+    deframe() %>%
+    euler(shape = shapeType)
+  
+  plot(
+    obj,
+    quantities = list(type = quants),
+    main = plotTitle,
+    asp = 1
+  )
+  
+}
 
 
 
