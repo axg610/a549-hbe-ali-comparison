@@ -205,7 +205,9 @@ per_donor_data[["logical_matrix_a5Exclude"]] <- a5_exclude
 per_donor_data[["logical_matrix_a5Exclude_upreg"]] <- a5_exclude_upreg
 per_donor_data[["logical_matrix_a5Exclude_downreg"]] <- a5_exclude_downreg
 
-
+per_donor_data[["a549_genes"]] <- a549_genes
+per_donor_data[["a549_genes_upreg"]] <- a549_genes_upreg
+per_donor_data[["a549_genes_downreg"]] <- a549_genes_downreg
 
 
 

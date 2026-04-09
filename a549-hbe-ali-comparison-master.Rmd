@@ -63,7 +63,7 @@ Previously, we saw that **only ~17% of the IL1B-regulated gene signature in A549
 
 **TODO: what % of the IL1B-regulated signature in A549s is shared with at least one donor?**
 
-```{r old venns, fig.height=4, fig.width=5}
+```{r old venns, fig.height=4, fig.width=5, cache=T}
 source("modules/fig-old-venns.R")
 cleanup_objects()
 ```
@@ -78,11 +78,7 @@ cleanup_objects()
 ```
 
 ```{r basic per-donor threshold metrics, fig.height=3, fig.width=8}
-
-
-
-
-
+source("modules/fig-per-donor-threshold-metrics.R")
 cleanup_objects()
 ```
 
@@ -91,72 +87,7 @@ cleanup_objects()
 *"Fixed" colors on Venns. This package doesn't let you specify colors for different groups, so I set everything to white instead.*
 
 ```{r pairwise venns vs a549, fig.width=8}
-
-
-
-# write overlaps to the main per-donor object
-
-
-
-# plots
-
-plot_pairwise_venns <- function(
-    inputOverlaps, 
-    referenceGroup = a549_genes,
-    plotTitle = "title here"){
-  
-  # take an overlaps dataframe from above and create an array of pairwise
-  # venn digrams using ggVennDiagram.
-  
-  # must specify the reference group (the bottom venn lobe)
-  
-  plots <- inputOverlaps %>%
-    mutate(
-    p = map2(
-      genes,
-      title,
-      ~ ggVennDiagram(
-        list(
-          " " = referenceGroup,
-          "  " = .x
-        ),
-        label_alpha = 0,
-        label_size = 3
-      ) +
-        ggtitle(.y) +
-        scale_fill_gradient(low = "white", high = "white") +
-        theme(
-          legend.position = "none",
-          plot.title = element_text(size = 10, hjust = 0.5)
-        )
-    )
-  )
-  
-  print(
-    wrap_plots(plots$p, ncol = 6) +
-      plot_annotation(title = plotTitle)
-    )
-  
-}
-
-plot_pairwise_venns(
-  overlaps,         
-  a549_genes, 
-  "(A) Pairwise Venns for IL1B-reg genes: abs(log2fold) >= 1, donor (top) vs A549 (bottom)"
-  )
-
-plot_pairwise_venns(
-  overlaps_upreg,   
-  a549_genes_upreg, 
-  "(B) Pairwise Venns for IL1B-upreg genes: log2fold >= 1, donor (top) vs A549 (bottom)"
-  )
-
-plot_pairwise_venns(
-  overlaps_downreg, 
-  a549_genes_downreg, 
-  "(C) Pairwise Venns for IL1B-downreg genes: log2fold <= -1, donor (top) vs A549 (bottom)"
-  )
-
+source("modules/fig-per-donor-pairwise-venns.R")
 cleanup_objects()
 ```
 
@@ -169,63 +100,18 @@ Some summary metrics for the pairwise Venns:
 Each dot is one donor-to-A549 comparison. We see that overlaps are bigger when focusing on upregulated genes, and smaller when focusing on downregulated genes. Again showing that most commonality between cell types sits in the upregulated gene fraction. T-test between $Jaccard_{\text{upreg}}$ and $Jaccard_{\text{downreg}}$, the bottom right panel, shows P=0.0001169.
 
 ```{r pairwise venns summary, fig.height=4, fig.width=4}
-df <- per_donor_data[["overlaps_summary"]] %>%
-  filter(name != "A549 mean") %>%
-  select(criterion, name, union, overlap, jaccard) %>%
-  pivot_longer(cols = c(union, overlap, jaccard), names_to = "stat", values_to = "value") %>%
-  mutate(
-    group = if_else(criterion == "reg", "all regulated genes", "split by direction"),
-    stat = factor(stat, levels = c("union", "overlap", "jaccard"))
-    )
-
-ggplot(df,
-       aes(x = criterion, y = value)
-       ) +
-  facet_grid(stat~group, scales = "free") +
-  stat_summary(geom = "bar", fun = "mean", width = 0.5, color = "black") +
-  # stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.3) +
-  geom_jitter(width = 0.05) +
-  theme_bw() +
-  theme(
-    strip.background = element_blank(),
-    panel.grid = element_blank()
-  ) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.25))) +
-  labs(y = NULL, x = NULL)
-
-# t.test(
-#   per_donor_data[["overlaps_summary"]] %>% 
-#     filter(criterion == "upreg", name != "A549 mean") %>% 
-#     pull(jaccard),
-#     per_donor_data[["overlaps_summary"]] %>% 
-#     filter(criterion == "downreg", name != "A549 mean") %>% 
-#     pull(jaccard)
-# )
-```
-
-**Where do primary donors sit in relation to each other?** This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
-
-```{r calculate matrices for upset plots}
-
-
-  
-# write logical matrices to the main per-donor object
-
-
-
+source("modules/fig-per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
+**Where do primary donors sit in relation to each other?** 
 
-```{r upset plots between donors, fig.height=8, fig.width=7}
+This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
 
-# plots
+Now split the visualization down from all regulated genes to upregulated and downregulated genes (see below). Notice how 50 of the 54 "universally shared" genes present in the upregulated fraction (panel C), and 70 of 70 "donor-shared" genes present in the upregulated fraction (panel E). However, DEGs unique to each donor still dominate over DEGs shared between donors.
 
-p1 <- plot_upset(logicalMatrix = per_donor_data[["logical_matrix"]], plotTitle = "A")
-p2 <- plot_upset(per_donor_data[["logical_matrix_a5Exclude"]], plotTitle = "B")
-
-wrap_plots(p1, p2, nrow = 2)
-
+```{r upset plots between donors, fig.height=8, fig.width=9}
+source("modules/fig-per-donor-upset.R")
 cleanup_objects()
 ```
 
@@ -258,22 +144,6 @@ setdiff(
     filter(if_all(everything(), ~ .x == 1)) %>%
     rownames()
 )
-```
-
-Now split the visualization down from all regulated genes to upregulated and downregulated genes (see below). Notice how 50 of the 54 "universally shared" genes present in the upregulated fraction (panel A), and 70 of 70 "donor-shared" genes present in the upregulated fraction (panel C). However, DEGs unique to each donor still dominate over DEGs shared between donors.
-
-```{r, fig.height=8, fig.width=9}
-
-p1 <- plot_upset(logicalMatrix = per_donor_data[["logical_matrix_upreg"]], plotTitle = "(A) IL1B-upregulated")
-p2 <- plot_upset(logicalMatrix = per_donor_data[["logical_matrix_downreg"]], plotTitle = "(B) IL1B-downregulated")
-
-
-p3 <- plot_upset(per_donor_data[["logical_matrix_a5Exclude_upreg"]], plotTitle = "(C) IL1B-upreg, primary only")
-p4 <- plot_upset(per_donor_data[["logical_matrix_a5Exclude_downreg"]], plotTitle = "(D) IL1B-downreg, primary only")
-
-wrap_plots(p1, p2, p3, p4, nrow = 2)
-
-cleanup_objects()
 ```
 
 <!-- *TODO: visualize as a rough Euler plot* -->
