@@ -64,56 +64,7 @@ Previously, we saw that **only ~17% of the IL1B-regulated gene signature in A549
 **TODO: what % of the IL1B-regulated signature in A549s is shared with at least one donor?**
 
 ```{r old venns, fig.height=4, fig.width=5}
-
-# knitr::include_graphics("data/il1b-venn.png")
-
-# create logical matrices
-
-reg <- dea %>%
-  filter(
-    treatment == "IL1B",
-    FDR <= 0.05,
-    abs(log2fold) >= 1
-  ) %>%
-  group_by(celltype) %>%
-  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
-  unnest(Gene) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
-  column_to_rownames("Gene")
-
-upreg <- dea %>%
-  filter(
-    treatment == "IL1B",
-    FDR <= 0.05,
-    log2fold >= 1
-  ) %>%
-  group_by(celltype) %>%
-  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
-  unnest(Gene) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
-  column_to_rownames("Gene")
-
-downreg <- dea %>%
-  filter(
-    treatment == "IL1B",
-    FDR <= 0.05,
-    log2fold <= -1
-  ) %>%
-  group_by(celltype) %>%
-  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
-  unnest(Gene) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
-  column_to_rownames("Gene")
-
-# plot
-
-plot_euler(reg, plotTitle = "(A) IL1B-regulated genes at 6h")
-plot_euler(upreg, plotTitle = "(B) IL1B-upregulated genes at 6h")
-plot_euler(downreg, plotTitle = "(C) IL1B-downregulated genes at 6h")
-
+source("modules/fig-old-venns.R")
 cleanup_objects()
 ```
 
@@ -121,97 +72,16 @@ One possible reason for differences: A549s are derived from one individual, so f
 
 *Fixed: problem 040626, discrepancy between Venn and spread gene counts.*
 
-```{r initialize per-donor data}
-per_donor_data <- list()
-
-per_donor_data[["tpm_by_donor"]] <- tpm %>%
-  filter(treatment == "IL1B") %>%
-  mutate(rep = if_else(celltype == "A549", "mean", rep)) %>%
-  mutate(name = paste(celltype, rep)) %>%
-  select(Gene, name, rep, celltype, treatment, tpm, log2tpm, fold, log2fold)
-  
-per_donor_data[["thresholded_log2fold"]] <- per_donor_data[["tpm_by_donor"]] %>%
-  group_by(Gene, name, rep, celltype) %>%
-  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
-  mutate(meets_threshold = abs(log2fold) >= 1)
-
+```{r calculate per-donor metrics}
+source("modules/per-donor-set-theory.R")
 cleanup_objects()
 ```
 
-```{r log2fold threshold on a per-donor basis, fig.height=3, fig.width=8}
+```{r basic per-donor threshold metrics, fig.height=3, fig.width=8}
 
-# counts: how many threshold-meeting genes in each donor?
-counts <- per_donor_data[["thresholded_log2fold"]] %>%
-  filter(meets_threshold) %>%
-  group_by(name, rep, celltype) %>%
-  summarize(n = length(unique(Gene)), .groups = "drop") %>%
-  arrange(name) %>%
-  mutate(name = factor(name, levels = unique(name)))
 
-# spread: sd and %meetingThreshold for each gene, in each celltype
-spread <- per_donor_data[["thresholded_log2fold"]] %>%
-  group_by(Gene, celltype) %>%
-  filter(any(meets_threshold)) %>%
-  ungroup() %>%
-  select(-log2fold) %>%
-  distinct() %>%
-  left_join(
-    per_donor_data[["tpm_by_donor"]]
-  ) %>%
-  group_by(Gene, celltype) %>%
-  summarize(
-    sd = sd(log2fold),
-    n_meets_threshold = length(Gene[abs(log2fold) >= 1]),
-    nreps = length(Gene),
-    percent_meets_threshold = 100 * n_meets_threshold / nreps,
-    .groups = "drop"
-  )
 
-# write info to the main per-donor object
-per_donor_data[["counts"]] <- counts
-per_donor_data[["spread"]] <- spread
 
-# plots
-
-p1 <- ggplot(
-  counts, 
-  aes(y = name, x = n, fill = celltype, label = n)
-) +
-  geom_col() +
-  geom_text(hjust = 1.1) +
-  theme_minimal() +
-  labs(x = "genes with |log2fold| > 1", y = NULL, title = "A") +
-  guides(fill = "none")
-
-p2 <- ggplot(
-  spread,
-  aes(y = celltype, x = sd, fill = celltype)
-) +
-  geom_jitter(size = 0.1, height = 0.3, alpha = 0.7) +
-  geom_violin(trim = TRUE, alpha = 0.7, color = "black") +
-  geom_boxplot(width = 0.2, outliers = F, alpha = 0.7, color = "black") +
-  theme_minimal() +
-  labs(y = NULL, x = "SD of log2fold across donors", title = "B") +
-  coord_cartesian(xlim = c(0, 3)) +
-  guides(fill = "none")
-
-p3 <- ggplot(
-  spread,
-  aes(y = celltype, x = percent_meets_threshold, fill = celltype)
-) +
-  stat_summary(
-    geom = "errorbar", fun.data = "mean_sdl",
-    fun.args = list(mult = 1), 
-    width = 0.5
-    ) +
-  stat_summary(
-    geom = "col", fun = "mean",
-    color = "black"
-    ) +
-  theme_minimal() +
-  labs(y = NULL, x = "% donors with |log2fold| > 1", title = "C")
-
-wrap_plots(p1, p2, p3, nrow = 1)
 
 cleanup_objects()
 ```
@@ -222,102 +92,11 @@ cleanup_objects()
 
 ```{r pairwise venns vs a549, fig.width=8}
 
-# sets: which genes meet the log2fold threshold in each donor?
-# for two-tailed, upregulated, and downregulated cases
 
-sets <- per_donor_data[["thresholded_log2fold"]] %>%
-  filter(abs(log2fold) >= 1) %>%
-  group_by(name, celltype, rep) %>%
-  summarize(genes = list(unique(Gene)), .groups = "drop")
-
-sets_upreg <- per_donor_data[["thresholded_log2fold"]] %>%
-  filter(log2fold >= 1) %>%
-  group_by(name, celltype, rep) %>%
-  summarize(genes = list(unique(Gene)), .groups = "drop")
-
-sets_downreg <- per_donor_data[["thresholded_log2fold"]] %>%
-  filter(log2fold <= -1) %>%
-  group_by(name, celltype, rep) %>%
-  summarize(genes = list(unique(Gene)), .groups = "drop")
-  
-
-# a549 genes: the set against which all other sets will be compared
-# for two-tailed, upregulated, and downregulated cases
-
-a549_genes <- sets %>%
-  filter(name == "A549 mean") %>%
-  pull(genes) %>%
-  .[[1]]
-
-a549_genes_upreg <- sets_upreg %>%
-  filter(name == "A549 mean") %>%
-  pull(genes) %>%
-  .[[1]]
-
-a549_genes_downreg <- sets_downreg %>%
-  filter(name == "A549 mean") %>%
-  pull(genes) %>%
-  .[[1]]
-
-# overlaps: how does each donor interact with the A549 consensus?
-# for two-tailed, upregulated, and downregulated cases
-
-overlaps <- sets %>%
-  mutate(
-    n_genes = map_int(genes, length),
-    overlap_genes = map(genes, ~ intersect(a549_genes, .x)),
-    overlap = map_int(genes, ~ length(intersect(a549_genes, .x))),
-    union = map_int(genes, ~ length(union(a549_genes, .x))),
-    jaccard = overlap / union,
-    title = paste0(
-      name,
-      "\nJ=", round(jaccard, 2),
-      " | n=", union
-    )
-  )
-
-overlaps_upreg <- sets_upreg %>%
-  mutate(
-    n_genes = map_int(genes, length),
-    overlap_genes = map(genes, ~ intersect(a549_genes_upreg, .x)),
-    overlap = map_int(genes, ~ length(intersect(a549_genes_upreg, .x))),
-    union = map_int(genes, ~ length(union(a549_genes_upreg, .x))),
-    jaccard = overlap / union,
-    title = paste0(
-      name,
-      "\nJ=", round(jaccard, 2),
-      " | n=", union
-    )
-  )
-
-overlaps_downreg <- sets_downreg %>%
-  mutate(
-    n_genes = map_int(genes, length),
-    overlap_genes = map(genes, ~ intersect(a549_genes_downreg, .x)),
-    overlap = map_int(genes, ~ length(intersect(a549_genes_downreg, .x))),
-    union = map_int(genes, ~ length(union(a549_genes_downreg, .x))),
-    jaccard = overlap / union,
-    title = paste0(
-      name,
-      "\nJ=", round(jaccard, 2),
-      " | n=", union
-    )
-  )
 
 # write overlaps to the main per-donor object
 
-per_donor_data[["overlaps"]] <- overlaps
-per_donor_data[["overlaps_upreg"]] <- overlaps_upreg
-per_donor_data[["overlaps_downreg"]] <- overlaps_downreg
 
-per_donor_data[["overlaps_summary"]] <- rbind(
-  per_donor_data[["overlaps"]] %>%
-    mutate(criterion = "reg", .before = 1),
-  per_donor_data[["overlaps_upreg"]] %>%
-    mutate(criterion = "upreg", .before = 1),
-  per_donor_data[["overlaps_downreg"]] %>%
-    mutate(criterion = "downreg", .before = 1)
-)
 
 # plots
 
@@ -428,65 +207,11 @@ ggplot(df,
 
 ```{r calculate matrices for upset plots}
 
-# logical matrix: is each gene present (1/0) in each donor?
-# for two-tailed, upregulated, and downregulated cases
 
-logical_matrix <- per_donor_data[["overlaps"]] %>%
-  select(name, genes) %>%
-  unnest(genes) %>%
-  mutate(value = 1) %>%
-  pivot_wider(
-    names_from = "name",
-    values_from = "value",
-    values_fill = 0
-  ) %>%
-  column_to_rownames("genes")
-
-logical_matrix_upreg <- per_donor_data[["overlaps_upreg"]] %>%
-  select(name, genes) %>%
-  unnest(genes) %>%
-  mutate(value = 1) %>%
-  pivot_wider(
-    names_from = "name",
-    values_from = "value",
-    values_fill = 0
-  ) %>%
-  column_to_rownames("genes")
-
-logical_matrix_downreg <- per_donor_data[["overlaps_downreg"]] %>%
-  select(name, genes) %>%
-  unnest(genes) %>%
-  mutate(value = 1) %>%
-  pivot_wider(
-    names_from = "name",
-    values_from = "value",
-    values_fill = 0
-  ) %>%
-  column_to_rownames("genes")
-
-# an extra matrix where A549 and related genes are excluded
-
-a5_exclude <- logical_matrix %>%
-  select(-`A549 mean`) %>%
-  filter(!if_all(everything(), ~ .x == 0))
-
-a5_exclude_upreg <- logical_matrix_upreg %>%
-  select(-`A549 mean`) %>%
-  filter(!if_all(everything(), ~ .x == 0))
-
-a5_exclude_downreg <- logical_matrix_downreg %>%
-  select(-`A549 mean`) %>%
-  filter(!if_all(everything(), ~ .x == 0))
   
 # write logical matrices to the main per-donor object
 
-per_donor_data[["logical_matrix"]] <- logical_matrix
-per_donor_data[["logical_matrix_upreg"]] <- logical_matrix_upreg
-per_donor_data[["logical_matrix_downreg"]] <- logical_matrix_downreg
 
-per_donor_data[["logical_matrix_a5Exclude"]] <- a5_exclude
-per_donor_data[["logical_matrix_a5Exclude_upreg"]] <- a5_exclude_upreg
-per_donor_data[["logical_matrix_a5Exclude_downreg"]] <- a5_exclude_downreg
 
 cleanup_objects()
 ```

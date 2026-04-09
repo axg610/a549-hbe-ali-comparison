@@ -131,7 +131,7 @@ overlaps_downreg <- sets_downreg %>%
 # logical matrix: is each gene present (1/0) in each donor?
 # for two-tailed, upregulated, and downregulated cases
 
-logical_matrix <- per_donor_data[["overlaps"]] %>%
+logical_matrix <- overlaps %>%
   select(name, genes) %>%
   unnest(genes) %>%
   mutate(value = 1) %>%
@@ -142,7 +142,7 @@ logical_matrix <- per_donor_data[["overlaps"]] %>%
   ) %>%
   column_to_rownames("genes")
 
-logical_matrix_upreg <- per_donor_data[["overlaps_upreg"]] %>%
+logical_matrix_upreg <- overlaps_upreg %>%
   select(name, genes) %>%
   unnest(genes) %>%
   mutate(value = 1) %>%
@@ -153,7 +153,7 @@ logical_matrix_upreg <- per_donor_data[["overlaps_upreg"]] %>%
   ) %>%
   column_to_rownames("genes")
 
-logical_matrix_downreg <- per_donor_data[["overlaps_downreg"]] %>%
+logical_matrix_downreg <- overlaps_downreg %>%
   select(name, genes) %>%
   unnest(genes) %>%
   mutate(value = 1) %>%
