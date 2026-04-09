@@ -220,11 +220,9 @@ wrap_plots(p1, p2, p3, nrow = 1)
 cleanup_objects()
 ```
 
-**Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(top circle)** vs A549 cells **(bottom circle)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size)**
+**Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(top circle)** vs A549 cells **(bottom circle)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size).** This analysis was performed on regulated genes in general (panel A), IL1B-upregulated genes (panel B), and IL1B-downregulated genes (panel C)
 
 *Fixed: colors on Venns.*
-
-*TODO: split into up- and down-regulated*
 
 ```{r pairwise venns vs a549, fig.width=8}
 
@@ -316,6 +314,15 @@ per_donor_data[["overlaps"]] <- overlaps
 per_donor_data[["overlaps_upreg"]] <- overlaps_upreg
 per_donor_data[["overlaps_downreg"]] <- overlaps_downreg
 
+per_donor_data[["overlaps_summary"]] <- rbind(
+  per_donor_data[["overlaps"]] %>%
+    mutate(criterion = "reg", .before = 1),
+  per_donor_data[["overlaps_upreg"]] %>%
+    mutate(criterion = "upreg", .before = 1),
+  per_donor_data[["overlaps_downreg"]] %>%
+    mutate(criterion = "downreg", .before = 1)
+)
+
 # plots
 
 plot_pairwise_venns <- function(
@@ -376,6 +383,49 @@ plot_pairwise_venns(
   )
 
 cleanup_objects()
+```
+
+Some summary metrics for the pairwise Venns:
+
+- Union = everything in the A549 lobe, the donor lobe, and the intersect
+- Overlap = genes expressed in both A549 and the donor
+- Jaccard = $\frac{\text{overlap}}{\text{union}}$, high = big overlap, low = little to no overlap
+
+Each dot is one donor-to-A549 comparison. We see that overlaps are bigger when focusing on upregulated genes, and smaller when focusing on downregulated genes. Again showing that most commonality between cell types sits in the upregulated gene fraction. T-test between $Jaccard_{\text{upreg}}$ and $Jaccard_{\text{downreg}}$, the bottom right panel, shows P=0.0001169.
+
+```{r pairwise venns summary, fig.height=4, fig.width=4}
+df <- per_donor_data[["overlaps_summary"]] %>%
+  filter(name != "A549 mean") %>%
+  select(criterion, name, union, overlap, jaccard) %>%
+  pivot_longer(cols = c(union, overlap, jaccard), names_to = "stat", values_to = "value") %>%
+  mutate(
+    group = if_else(criterion == "reg", "all regulated genes", "split by direction"),
+    stat = factor(stat, levels = c("union", "overlap", "jaccard"))
+    )
+
+ggplot(df,
+       aes(x = criterion, y = value)
+       ) +
+  facet_grid(stat~group, scales = "free") +
+  stat_summary(geom = "bar", fun = "mean", width = 0.5, color = "black") +
+  # stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.3) +
+  geom_jitter(width = 0.05) +
+  theme_bw() +
+  theme(
+    strip.background = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.25))) +
+  labs(y = NULL, x = NULL)
+
+# t.test(
+#   per_donor_data[["overlaps_summary"]] %>% 
+#     filter(criterion == "upreg", name != "A549 mean") %>% 
+#     pull(jaccard),
+#     per_donor_data[["overlaps_summary"]] %>% 
+#     filter(criterion == "downreg", name != "A549 mean") %>% 
+#     pull(jaccard)
+# )
 ```
 
 **Where do primary donors sit in relation to each other?** This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
