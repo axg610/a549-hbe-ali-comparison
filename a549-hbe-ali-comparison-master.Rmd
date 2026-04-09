@@ -13,6 +13,7 @@ knitr::opts_chunk$set(
 # for set theory
 library(ggVennDiagram)
 library(ComplexUpset)
+library(eulerr)
 
 # misc tools
 library(patchwork)
@@ -60,13 +61,80 @@ knitr::kable(
 
 Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe only ~30% shared with the primary cell types. Venn diagram for "significant" genes (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type:
 
-```{r old venn, out.width='50%'}
-knitr::include_graphics("data/il1b-venn.png")
+*TODO: separate up- and down-regulated Venns*
+
+```{r old venn, fig.height=5, fig.width=5}
+# knitr::include_graphics("data/il1b-venn.png")
+
+dea_to_euler <- function(input, shapeType = "circle", plotTitle = "title"){
+  
+  # takes some rows from DEA and returns a eulerr plot showing interactions
+  # between A549, ALI, and HBE
+  
+  obj <- input %>%
+    group_by(celltype) %>%
+    summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+    unnest(Gene) %>%
+    mutate(value = celltype) %>%
+    pivot_wider(
+      names_from = "celltype",
+      values_from = "value",
+      values_fill = NA
+    ) %>%
+    rowwise() %>%
+    summarize(
+      group = paste(na.omit(c_across(-Gene)), collapse = "&"),
+      .groups = "drop"
+    ) %>%
+    count(group) %>%
+    deframe() %>%
+    euler(shape = shapeType)
+  
+  plot(
+    obj,
+    quantities = list(type = c("counts")),
+    main = plotTitle,
+    asp = 1
+    )
+  
+}
+
+dea %>%
+  filter(
+    treatment == "IL1B",
+    FDR <= 0.05,
+    abs(log2fold) >= 1
+  ) %>%
+  dea_to_euler(
+    plotTitle = "IL1B-regulated genes at 6h"
+  )
+
+dea %>%
+  filter(
+    treatment == "IL1B",
+    FDR <= 0.05,
+    log2fold >= 1
+  ) %>%
+  dea_to_euler(
+    plotTitle = "IL1B-upregulated genes at 6h"
+  )
+
+dea %>%
+  filter(
+    treatment == "IL1B",
+    FDR <= 0.05,
+    log2fold <= -1
+  ) %>%
+  dea_to_euler(
+    plotTitle = "IL1B-downregulated genes at 6h"
+  )
+
+cleanup_objects()
 ```
 
 One possible reason: A549s are derived from one individual, so four sequencing replicates may have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, so higher variability + lower significance. Ignoring FDR entirely (i.e., only using the abs(log2fold) >= 1 threshold), A549 and primary cells actually have similarly sized regulated gene pools (panel A). In A549s, variation in tpm-derived log2fold values tend to be lower (panel B) and a greater proportion of the rep pool meets log2fold thresholds (panel C).
 
-*Fixed problem 040626: discrepancy between Venn and spread gene counts.*
+*Fixed: problem 040626, discrepancy between Venn and spread gene counts.*
 
 ```{r initialize per-donor data}
 per_donor_data <- list()
@@ -164,7 +232,11 @@ wrap_plots(p1, p2, p3, nrow = 1)
 cleanup_objects()
 ```
 
-**Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(white)** vs A549 cells **(grey)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size)**
+**Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(top circle)** vs A549 cells **(bottom circle)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size)**
+
+*Fixed: colors on Venns.*
+
+*TODO: split into up- and down-regulated*
 
 ```{r pairwise venns vs a549, fig.width=8}
 
@@ -214,7 +286,7 @@ plots <- overlaps %>%
         label_size = 3
       ) +
         ggtitle(.y) +
-        scale_fill_gradient(low = "white", high = "grey50") +
+        scale_fill_gradient(low = "white", high = "white") +
         theme(
           legend.position = "none",
           plot.title = element_text(size = 10, hjust = 0.5)
@@ -228,6 +300,8 @@ cleanup_objects()
 ```
 
 **Where do primary donors sit in relation to each other?** This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
+
+*TODO: split into up- and down-regulated*
 
 ```{r upset plot between donors, fig.height=8, fig.width=6}
 
@@ -349,81 +423,7 @@ setdiff(
 )
 ```
 
-<!-- Rob: *"Something I don’t understand: The number of A549 DEGs has jumped from about 2600 in the first analysis (Venn) to 8200 here (above analysis)?? Something wrong? Is the artificial baseline (tpm 0.1 or 0.01) at play here? The simple tpm calculation will then include many very lowly expressed genes…..?"* -->
-
-<!-- Baseline is 0.1, code snippet below: -->
-
-<!-- ```{text, echo=T, eval=F} -->
-
-<!--   ... -->
-<!--     filter(!all(tpm == 0)) %>% -->
-<!--     ungroup() %>% -->
-<!--     mutate(log2tpm = log2(tpm + 0.1)) %>% -->
-<!--     group_by(Gene, celltype) %>% -->
-<!--     mutate(log2fold = log2tpm - log2tpm[treatment == "NS"]) %>% -->
-<!--     ungroup() %>% -->
-<!--     mutate(fold = 2^log2fold) %>% -->
-<!--   ... -->
-<!-- ``` -->
-
-
-<!-- ```{r discrepancy in gene number} -->
-<!-- gene_to_fdr <- dea %>% -->
-<!--   filter(treatment == "IL1B") %>% -->
-<!--   select(Gene, celltype, FDR) -->
-
-<!-- # df <- tpm %>% -->
-<!-- #   mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>% -->
-<!-- #   filter(treatment == "IL1B") %>% -->
-<!-- #   mutate(name = paste(celltype, rep)) %>% -->
-<!-- #   group_by(Gene, rep, celltype, name) %>% -->
-<!-- #   summarize(log2fold = mean(log2fold), .groups = "drop") %>% -->
-<!-- #   ungroup() %>% -->
-<!-- #   filter( -->
-<!-- #     abs(log2fold) >= 1 -->
-<!-- #   ) %>% -->
-<!-- #   left_join(gene_to_fdr, by = c("Gene", "celltype")) %>% -->
-<!-- #   mutate(FDR = if_else(is.na(FDR), 1, FDR)) %>% -->
-<!-- #   mutate(sig = FDR <= 0.05) -->
-
-<!-- df <- tpm %>% -->
-<!--   mutate(rep = if_else(str_detect(rep, "R"), "mean", rep)) %>% -->
-<!--   filter(treatment == "IL1B", abs(log2fold) >= 1) %>% -->
-<!--   mutate(name = paste(celltype, rep)) %>% -->
-<!--   group_by(Gene, rep, celltype, name) %>% -->
-<!--   summarize(log2fold = mean(log2fold), .groups = "drop") %>% -->
-<!--   ungroup() %>% -->
-<!--   left_join(gene_to_fdr, by = c("Gene", "celltype")) %>% -->
-<!--   mutate(FDR = if_else(is.na(FDR), 1, FDR)) %>% -->
-<!--   mutate(sig = FDR <= 0.05) -->
-
-<!-- ggplot( -->
-<!--   df, -->
-<!--   aes(x = log2fold, fill = sig) -->
-<!-- ) + -->
-<!--   facet_wrap(~name, scales = "free_x") + -->
-<!--   geom_histogram() -->
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+*TODO: visualize as a rough Euler plot*
 
 
 
