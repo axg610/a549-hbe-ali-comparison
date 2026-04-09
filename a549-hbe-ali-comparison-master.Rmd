@@ -59,7 +59,9 @@ knitr::kable(
 
 ## IN PROGRESS: Understanding individual variation in gene expression
 
-Previously, we saw that the IL1B-regulated gene signature in A549 cells is maybe only ~30% shared with the primary cell types. See Venn diagrams below for DEGs (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type (panel A), up-DEGs (panel B), and down-DEGs (panel C). When looking for "regulation" in general, A549s look very different from primary cells. Splitting into up- and down-regulated groups reveals that most of this difference is attributable to downregulated genes. i.e., A549s are a reasonable model for IL1B-responsive gene induction but not suppression in primary cells.
+Previously, we saw that **only ~17% of the IL1B-regulated gene signature in A549s is shared with at least one primary celltype**. See Venn diagrams below for DEGs (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type (panel A), up-DEGs (panel B), and down-DEGs (panel C). When looking for "regulation" in general, A549s look very different from primary cells. Splitting into up- and down-regulated groups reveals that most of this difference is attributable to downregulated genes. i.e., A549s are a reasonable model for IL1B-responsive gene induction but not suppression in primary cells. If we just look at upregulated genes, **~33% of the IL1B-regulated gene signature in A549s is shared with at least one primary celltype**.
+
+**TODO: what % of the IL1B-regulated signature in A549s is shared with at least one donor?**
 
 ```{r old venns, fig.height=4, fig.width=5}
 
@@ -216,7 +218,7 @@ cleanup_objects()
 
 **Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(top circle)** vs A549 cells **(bottom circle)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size).** This analysis was performed on regulated genes in general (panel A), IL1B-upregulated genes (panel B), and IL1B-downregulated genes (panel C)
 
-*Fixed: colors on Venns.*
+*"Fixed" colors on Venns. This package doesn't let you specify colors for different groups, so I set everything to white instead.*
 
 ```{r pairwise venns vs a549, fig.width=8}
 
@@ -343,7 +345,7 @@ plot_pairwise_venns <- function(
         label_size = 3
       ) +
         ggtitle(.y) +
-        scale_fill_gradient(low = "white", high = "grey50") +
+        scale_fill_gradient(low = "white", high = "white") +
         theme(
           legend.position = "none",
           plot.title = element_text(size = 10, hjust = 0.5)
@@ -423,8 +425,6 @@ ggplot(df,
 ```
 
 **Where do primary donors sit in relation to each other?** This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
-
-*TODO: split into up- and down-regulated*
 
 ```{r calculate matrices for upset plots}
 
@@ -551,8 +551,19 @@ wrap_plots(p1, p2, p3, p4, nrow = 2)
 cleanup_objects()
 ```
 
+<!-- *TODO: visualize as a rough Euler plot* -->
 
-*TODO: visualize as a rough Euler plot*
+```{r}
+# per_donor_data[["logical_matrix_upreg"]] %>% 
+#   plot_euler(plotTitle = "IL1B-upreg genes (6h, some small intersections ignored)")
+# 
+# test <- per_donor_data[["logical_matrix_upreg"]] %>%
+#   filter(`A549 mean` == 1) %>%
+#   plot_euler(plotTitle = "IL1B-upreg genes at 6h (only intersections involving A549)") 
+# 
+# test
+```
+
 
 
 

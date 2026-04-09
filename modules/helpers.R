@@ -53,13 +53,15 @@ plot_euler <- function(
     logicalMatrix, 
     shapeType = "circle", 
     plotTitle = "title here",
-    quants = c("counts")
+    quants = c("counts"),   # vector of metrics to show (e.g., counts, percent)
+    cutoff = 0              # intersections smaller than this number will be removed
 ){
   
   # a wrapper for the eulerr:euler function to create a Euler diagram given a
   # logical matrix specifying groups as colnames, presence/absence as 1/0, and
   # gene names as rownames.
   
+  # prepare intersections
   obj <- logicalMatrix %>%
     mutate(
       across(
@@ -70,8 +72,13 @@ plot_euler <- function(
     rowwise() %>%
     mutate(group = paste(na.omit(c_across(cols = everything())), collapse = "&")) %>%
     count(group) %>%
-    deframe() %>%
-    euler(shape = shapeType)
+    deframe()
+  
+  # impose cutoff
+  obj <- obj[obj >= cutoff]
+  
+  # calculate and plot
+  obj <- euler(obj, shape = shapeType)
   
   plot(
     obj,
