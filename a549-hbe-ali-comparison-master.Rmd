@@ -432,9 +432,11 @@ ggplot(df,
 
 *TODO: split into up- and down-regulated*
 
-```{r upset plot between donors, fig.height=8, fig.width=6}
+```{r calculate matrices for upset plots}
 
 # logical matrix: is each gene present (1/0) in each donor?
+# for two-tailed, upregulated, and downregulated cases
+
 logical_matrix <- per_donor_data[["overlaps"]] %>%
   select(name, genes) %>%
   unnest(genes) %>%
@@ -445,17 +447,48 @@ logical_matrix <- per_donor_data[["overlaps"]] %>%
     values_fill = 0
   ) %>%
   column_to_rownames("genes")
-  
-# write logical matrix to the main per-donor object
-per_donor_data[["logical_matrix"]] <- logical_matrix
+
+logical_matrix_upreg <- per_donor_data[["overlaps_upreg"]] %>%
+  select(name, genes) %>%
+  unnest(genes) %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    names_from = "name",
+    values_from = "value",
+    values_fill = 0
+  ) %>%
+  column_to_rownames("genes")
+
+logical_matrix_downreg <- per_donor_data[["overlaps_downreg"]] %>%
+  select(name, genes) %>%
+  unnest(genes) %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    names_from = "name",
+    values_from = "value",
+    values_fill = 0
+  ) %>%
+  column_to_rownames("genes")
 
 # an extra matrix where A549 and related genes are excluded
 a5_exclude <- logical_matrix %>%
   select(-`A549 mean`) %>%
   filter(!if_all(everything(), ~ .x == 0))
+  
+# write logical matrices to the main per-donor object
 
+per_donor_data[["logical_matrix"]] <- logical_matrix
+per_donor_data[["logical_matrix_a5Exclude"]] <- a5_exclude
+per_donor_data[["logical_matrix_upreg"]] <- logical_matrix_upreg
+per_donor_data[["logical_matrix_downreg"]] <- logical_matrix_downreg
+```
+
+
+```{r upset plots between donors, fig.height=8, fig.width=6}
 
 # plots
+
+plot_upset(logical_matrix, plotTitle = "A")
 
 p1 <- suppressWarnings(
   upset(
