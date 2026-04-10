@@ -51,6 +51,7 @@ plot_upset <- function(logicalMatrix, minSize = 50, plotTitle = "title here"){
 
 plot_euler <- function(
     logicalMatrix, 
+    plotType = "euler",
     shapeType = "circle", 
     plotTitle = "title here",
     quants = c("counts"),   # vector of metrics to show (e.g., counts, percent)
@@ -78,7 +79,12 @@ plot_euler <- function(
   obj <- obj[obj >= cutoff]
   
   # calculate and plot
-  obj <- euler(obj, shape = shapeType)
+  if(plotType == "euler"){
+    obj <- euler(obj, shape = shapeType)
+  }
+  else if(plotType == "venn"){
+    obj <- venn(obj)
+  }
   
   plot(
     obj,
