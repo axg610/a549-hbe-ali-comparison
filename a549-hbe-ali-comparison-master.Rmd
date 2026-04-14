@@ -17,26 +17,26 @@ library(eulerr)
 
 # misc tools
 library(patchwork)
+library(ggrepel)
 source("modules/helpers.R")
 
 #tidyverse
 library(tidyverse)
-library(ggrepel)
 ```
 
 Repo at https://github.com/axg610/a549-hbe-ali-comparison
+
+# 1. Alignment and DEA
+
+**Raw datasets:** A549, primary hBECs (submersion culture, HBE), and primary hBECs (air-liquid interface culture, ALI) treated with IL1B, glucocorticoid, or both at 6h. This is actually three experiments at different timepoints, so for now we use their shared timepoint (6 h post-treatment).
+
+Alignment performed with kallisto version 0.46.1 and normalization/DEA performed with sleuth version something on the cluster. Everything documented in `kallisto-sleuth.md`. I used individual sleuth runs for each cell type, modeled as `~treatment`. Effect sizes ("log2fold") and FDR are from Wald test using unstimulated (NS) samples as baseline. I also modeled everything together under model `~treatment*condition` for interaction testing. Finally, raw tpm values were extracted.
 
 ```{r load data}
 dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
 tpm <- read_tsv("data/raw/A549vsPrimary_tpm.txt")
 multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 ```
-
-## 1. Alignment and DEA
-
-**Raw datasets:** A549, primary hBECs (submersion culture, HBE), and primary hBECs (air-liquid interface culture, ALI) treated with IL1B, glucocorticoid, or both at 6h. This is actually three experiments at different timepoints, so for now we use their shared timepoint (6 h post-treatment).
-
-Alignment performed with kallisto version 0.46.1 and normalization/DEA performed with sleuth version something on the cluster. Everything documented in `kallisto-sleuth.md`. I used individual sleuth runs for each cell type, modeled as `~treatment`. Effect sizes ("log2fold") and FDR are from Wald test using unstimulated (NS) samples as baseline. I also modeled everything together under model `~treatment*condition` for interaction testing. Finally, raw tpm values were extracted.
 
 ```{r data previews}
 knitr::kable(
@@ -58,16 +58,43 @@ knitr::kable(
 )
 ```
 
-## 2. Understanding individual variation in gene expression
+# 2. Story notes
 
-### 2.1. Donors vs A549
+Given that IL1B-responsive gene expression patterns in A549s cells follow ... kinetics, carry ... functional signatures, we next want to understand the degree of concordance (or discordance) between A549 and primary cells.
 
-Previously, we saw that **only ~17% of the IL1B-regulated gene signature in A549s is shared with at least one primary celltype**. See Venn diagrams below for DEGs (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type (panel A), up-DEGs (panel B), and down-DEGs (panel C). When looking for "regulation" in general, A549s look very different from primary cells. Splitting into up- and down-regulated groups reveals that most of this difference is attributable to downregulated genes. i.e., A549s are a reasonable model for IL1B-responsive gene induction but not suppression in primary cells. If we just look at upregulated genes, **~33% of the IL1B-regulated gene signature in A549s is shared with at least one primary celltype**.
+Justify comparison at 6 h: majority of IL1B response observed at this timepoint, maybe most NFkappaB dependence as well? Maybe richest functional annotations? Other justifications?
+
+## 1. IL1B responses seem to differ substantially between A549 and primary cells
+
+**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. These overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
+
+From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. The problem is worse for downregulated genes than it is for upregulated.
 
 ```{r old venns, out.width="33%", fig.show='hold'}
 source("modules/fig-old-venns.R")
 cleanup_objects()
 ```
+
+## 2. However, differences likely stem from between-donor variation
+
+## 3. In fact, A549s effectively capture what "could" happen  across donors
+
+A549s do not recapitulate any single primary IL1B response, but capture a large fraction of the population-level transcriptional response (with a preference for induced programs). Same for each donor vs all other donors?
+
+## 4. Separately, all celltypes share a small, conserved, "core" program
+
+These genes have ... functional signature, follow ... kinetic, are ... NFkappaB dependent (and should be the focus of future studies?)
+
+
+
+# 3. Figures and code to be sorted into story notes
+
+
+## Understanding individual variation in gene expression
+
+### Donors vs A549
+
+
 
 One possible reason for differences: A549s are derived from one individual, so four sequencing replicates may have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, so higher variability + lower significance. Ignoring FDR entirely (i.e., only using the abs(log2fold) >= 1 threshold), A549 and primary cells actually have similarly sized regulated gene pools (panel A). In A549s, variation in tpm-derived log2fold values tend to be lower (panel B) and a greater proportion of the rep pool meets log2fold thresholds (panel C).
 
@@ -147,7 +174,7 @@ setdiff(
 )
 ```
 
-### 2.2. IN PROGRESS: Donors vs donors
+### IN PROGRESS: Donors vs donors
 
 **"Toy" example:** *at 5+ sets -- Venn impossible, Euler misleading, UpSet pretty good*
 
