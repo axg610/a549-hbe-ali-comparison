@@ -21,9 +21,10 @@ source("modules/helpers.R")
 
 #tidyverse
 library(tidyverse)
+library(ggrepel)
 ```
 
-<!-- All set up!!! Repo is at https://github.com/axg610/a549-hbe-ali-comparison. -->
+Repo at https://github.com/axg610/a549-hbe-ali-comparison
 
 ```{r load data}
 dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
@@ -31,7 +32,7 @@ tpm <- read_tsv("data/raw/A549vsPrimary_tpm.txt")
 multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 ```
 
-## Alignment and DEA
+## 1. Alignment and DEA
 
 **Raw datasets:** A549, primary hBECs (submersion culture, HBE), and primary hBECs (air-liquid interface culture, ALI) treated with IL1B, glucocorticoid, or both at 6h. This is actually three experiments at different timepoints, so for now we use their shared timepoint (6 h post-treatment).
 
@@ -57,13 +58,13 @@ knitr::kable(
 )
 ```
 
-## IN PROGRESS: Understanding individual variation in gene expression
+## 2. Understanding individual variation in gene expression
+
+### 2.1. Donors vs A549
 
 Previously, we saw that **only ~17% of the IL1B-regulated gene signature in A549s is shared with at least one primary celltype**. See Venn diagrams below for DEGs (log2fold <= -1 or >= 1 & FDR < 0.05) in each cell type (panel A), up-DEGs (panel B), and down-DEGs (panel C). When looking for "regulation" in general, A549s look very different from primary cells. Splitting into up- and down-regulated groups reveals that most of this difference is attributable to downregulated genes. i.e., A549s are a reasonable model for IL1B-responsive gene induction but not suppression in primary cells. If we just look at upregulated genes, **~33% of the IL1B-regulated gene signature in A549s is shared with at least one primary celltype**.
 
-**TODO: what % of the IL1B-regulated signature in A549s is shared with at least one donor?**
-
-```{r old venns, fig.height=4, fig.width=5, cache=T}
+```{r old venns, out.width="33%", fig.show='hold'}
 source("modules/fig-old-venns.R")
 cleanup_objects()
 ```
@@ -104,7 +105,7 @@ source("modules/fig-per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
-**Where do primary donors sit in relation to each other?** 
+**Where do primary donors and A549s sit in relation to each other?** 
 
 This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
 
@@ -146,18 +147,254 @@ setdiff(
 )
 ```
 
-<!-- *TODO: visualize as a rough Euler plot* -->
+### 2.2. IN PROGRESS: Donors vs donors
+
+**"Toy" example:** *at 5+ sets -- Venn impossible, Euler misleading, UpSet pretty good*
+
+Starting with IL1B-upregulated genes in ALIs, I wanted to quantify how much of this signature is shared with A549s. The Euler diagram (panel A) suggested that only ~20% of genes were shared between A549s and at least one ALI donor -- which was surprising. Even more surprisingly, most donors did not have connections with A549s at all...
+
+However, when we look at the full UpSet plot (panel B) we find that another ~20% of A549-donor-shared genes exist in small intersections involving one or two donors, which the Euler diagram cannot represent. A manual sum reveals that **A549s actually share 1488/2859 (52%) of IL1B-upregulated genes with at least one ALI donor.**
+
+
+```{r, out.width="50%", fig.show='hold'}
+test <- per_donor_data[["logical_matrix"]] %>%
+  select(contains("A549"), contains("ALI")) %>%
+  filter(!if_all(everything(), ~ .x == 0))
+
+plot_euler(test, shapeType = "circle", plotTitle = "(A) a misleading Euler diagram")
+
+plot_upset(test, minSize = 1, plotTitle = "(B) a less misleading UpSet plot")
+
+cleanup_objects()
+```
+
+After writing and testing R code that could recreate the manually-calculated "52%" number from above, I scaled the analysis to ask; **for each donor, how much of its IL1B-regulated gene signature is shared with at least one other donor?**
+
+(i) A549s have similar # of regulated genes when compared to donors (top left plot) -- aligns with previous observations
+
+(ii) This holds true for up **and** downregulated genes (top right plot) -- ??? split the barplot from section 2.1. and see if this is correct???
+
+(iii) Given any donor, ~90% of its regulated genes are shared with at least one other donor (bottom left plot). A549s are an outlier at ~70%, but this is still pretty good. Basically means that ~70% of the transcriptome we study in A549s represents at least one of our donors. If we sequence more donors, the percentage could increase.
+
+(iv) Low sharedness by A549s is mostly attributed to downregulated genes and not upregulated genes (bottom right plot).
+
+```{r, fig.height=4, fig.width=4}
+# # confirm the manual 52% figure:
+# 
+# df <- per_donor_data[["logical_matrix"]] %>%
+#   select(contains("A549"), contains("ALI")) %>%
+#   rownames_to_column("Gene")
+# 
+# summary_table <- df %>%
+#   mutate(row_total = rowSums(across(-Gene))) %>%
+#   pivot_longer(
+#     -c(Gene, row_total), names_to = "donor", values_to = "value"
+#   ) %>%
+#   group_by(donor) %>%
+#   summarize(
+#     total_genes  = sum(value == 1),
+#     shared_genes = sum(value == 1 & row_total > 1),
+#     unique_genes = total_genes - shared_genes,
+#     prop_shared = shared_genes / total_genes,
+#     .groups = "drop"
+#   )
+
+reg <- per_donor_data[["logical_matrix"]] %>%
+  rownames_to_column("Gene") %>%
+  mutate(row_total = rowSums(across(-Gene))) %>%
+  pivot_longer(
+    -c(Gene, row_total), names_to = "donor", values_to = "value"
+  ) %>%
+  group_by(donor) %>%
+  summarize(
+    total_genes  = sum(value == 1),
+    shared_genes = sum(value == 1 & row_total > 1),
+    unique_genes = total_genes - shared_genes,
+    percent_shared = 100 * shared_genes / total_genes,
+    .groups = "drop"
+  ) %>%
+  mutate(criterion = "reg", .before = 1)
+
+upreg <- per_donor_data[["logical_matrix_upreg"]] %>%
+  rownames_to_column("Gene") %>%
+  mutate(row_total = rowSums(across(-Gene))) %>%
+  pivot_longer(
+    -c(Gene, row_total), names_to = "donor", values_to = "value"
+  ) %>%
+  group_by(donor) %>%
+  summarize(
+    total_genes  = sum(value == 1),
+    shared_genes = sum(value == 1 & row_total > 1),
+    unique_genes = total_genes - shared_genes,
+    percent_shared = 100 * shared_genes / total_genes,
+    .groups = "drop"
+  ) %>%
+  mutate(criterion = "upreg", .before = 1)
+
+downreg <- per_donor_data[["logical_matrix_downreg"]] %>%
+  rownames_to_column("Gene") %>%
+  mutate(row_total = rowSums(across(-Gene))) %>%
+  pivot_longer(
+    -c(Gene, row_total), names_to = "donor", values_to = "value"
+  ) %>%
+  group_by(donor) %>%
+  summarize(
+    total_genes  = sum(value == 1),
+    shared_genes = sum(value == 1 & row_total > 1),
+    unique_genes = total_genes - shared_genes,
+    percent_shared = 100 * shared_genes / total_genes,
+    .groups = "drop"
+  ) %>%
+  mutate(criterion = "downreg", .before = 1)
+
+atLeastOneShared_summary <- rbind(
+  reg,
+  upreg,
+  downreg
+)
+
+df <- atLeastOneShared_summary %>%
+  select(criterion, donor, `total genes` = total_genes, `percent shared` = percent_shared) %>%
+  pivot_longer(cols = c(`total genes`, `percent shared`), names_to = "stat", values_to = "value") %>%
+  mutate(
+    group = if_else(criterion == "reg", "all regulated genes", "split by direction"),
+    stat = factor(stat, levels = c("total genes", "percent shared")),
+    color = if_else(str_detect(donor, "A549"), "A549", "primary"),
+    label = if_else(str_detect(donor, "A549"), "A549", NA)
+  )
+
+print(
+  
+  ggplot(df,
+         aes(x = criterion, y = value, color = color, label = label)
+  ) +
+    facet_grid(stat~group, scales = "free") +
+    stat_summary(geom = "bar", fun = "mean", width = 0.5, color = "black") +
+    # stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.3) +
+    geom_jitter(width = 0.05) +
+    theme_bw() +
+    theme(
+      strip.background = element_blank(),
+      panel.grid.minor = element_blank()
+    ) +
+    scale_y_continuous(
+      expand = expansion(mult = c(0, 0.25)),
+      breaks = scales::breaks_pretty(n = 5)) +
+    scale_color_manual(values = c("firebrick2", "black")) +
+    labs(y = NULL, x = NULL) +
+    guides(color = "none") +
+    
+    geom_text_repel(
+      nudge_y = -5, nudge_x = -0.3
+    )
+  
+)
+
+cleanup_objects()
+```
+
+**Are primary cells more variable in IL1B-regulated gene expression than A549 cells?** Should be. Check with PCA below:
+
+The PCA dispersion of HBEs is not statistically different from A549s, but ALIs is different from A549s. 
 
 ```{r}
-# per_donor_data[["logical_matrix_upreg"]] %>% 
-#   plot_euler(plotTitle = "IL1B-upreg genes (6h, some small intersections ignored)")
-# 
-# test <- per_donor_data[["logical_matrix_upreg"]] %>%
-#   filter(`A549 mean` == 1) %>%
-#   plot_euler(plotTitle = "IL1B-upreg genes at 6h (only intersections involving A549)") 
-# 
-# test
+reg_genes <- rownames(per_donor_data[["logical_matrix"]])
+upreg_genes <- rownames(per_donor_data[["logical_matrix_upreg"]])
+downreg_genes <- rownames(per_donor_data[["logical_matrix_downreg"]])
+
+pca_from_tpm <- function(.treatment, .genelist){
+  
+  mat <- tpm %>%
+    filter(treatment == .treatment, Gene %in% .genelist) %>%
+    mutate(name = paste(celltype, rep)) %>%
+    select(Gene, name, log2fold) %>%
+    pivot_wider(names_from = "name", values_from = "log2fold") %>%
+    column_to_rownames("Gene")
+  
+  pca <- prcomp(t(mat), scale. = TRUE)
+  
+  pca_df <- pca$x %>%
+    as.data.frame() %>%
+    rownames_to_column("name") %>%
+    select(name, PC1, PC2, PC3, PC4) %>%
+    separate(name, into = c("celltype", "rep"), sep = " ", remove = F)
+  
+  centroids <- pca_df %>%
+    group_by(celltype) %>%
+    summarize(across(PC1:PC4, mean), .groups = "drop")
+  
+  
+  pca_df <- pca_df %>%
+    left_join(centroids, by = "celltype", suffix = c("", "_centroid")) %>%
+    rowwise() %>%
+    mutate(
+      dist_to_centroid = sqrt(
+        sum(
+          (c_across(PC1:PC4) - c_across(PC1_centroid:PC4_centroid))^2
+        )
+      )
+    ) %>%
+    ungroup()
+  
+  dispersion <- pca_df %>%
+    group_by(celltype) %>%
+    summarize(
+      mean_dist = mean(dist_to_centroid),
+    sd_dist   = sd(dist_to_centroid),
+    .groups = "drop"
+  )
+  
+  list(
+    "matrix" = mat,
+    "pca" = pca,
+    "summary" = pca_df,
+    "dispersion" = dispersion
+  )
+  
+}
+
+test <- pca_from_tpm("IL1B", reg_genes)
+
+ggplot(
+  test$summary,
+  aes(x = PC1, y = PC2, shape = celltype)
+) +
+  geom_point()
+
+ggplot(
+  test$summary,
+  aes(x = celltype, y = dist_to_centroid)
+) +
+  geom_boxplot() +
+  geom_point()
+
+fit <- aov(dist_to_centroid ~ celltype, data = test$summary)
+summary(fit)
+
+tukey <- TukeyHSD(fit)
+tukey
+
+cleanup_objects()
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
