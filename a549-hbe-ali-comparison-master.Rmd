@@ -15,6 +15,10 @@ library(ggVennDiagram)
 library(ComplexUpset)
 library(eulerr)
 
+# heatmaps
+library(ComplexHeatmap)
+library(pheatmap)
+
 # misc tools
 library(patchwork)
 library(ggrepel)
@@ -26,19 +30,19 @@ library(tidyverse)
 
 Repo at https://github.com/axg610/a549-hbe-ali-comparison
 
-# 1. Alignment and DEA
+# 1. ===== Alignment and DEA =====
 
 **Raw datasets:** A549, primary hBECs (submersion culture, HBE), and primary hBECs (air-liquid interface culture, ALI) treated with IL1B, glucocorticoid, or both at 6h. This is actually three experiments at different timepoints, so for now we use their shared timepoint (6 h post-treatment).
 
 Alignment performed with kallisto version 0.46.1 and normalization/DEA performed with sleuth version something on the cluster. Everything documented in `kallisto-sleuth.md`. I used individual sleuth runs for each cell type, modeled as `~treatment`. Effect sizes ("log2fold") and FDR are from Wald test using unstimulated (NS) samples as baseline. I also modeled everything together under model `~treatment*condition` for interaction testing. Finally, raw tpm values were extracted.
 
-```{r load data}
+```{r load data, cache=T}
 dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
 tpm <- read_tsv("data/raw/A549vsPrimary_tpm.txt")
 multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 ```
 
-```{r data previews}
+```{r data previews, cache=T}
 knitr::kable(
   dea %>% filter(Gene == "NFKBIA"),
   caption = "Example univariate DEA data (~treatment)", 
@@ -58,57 +62,63 @@ knitr::kable(
 )
 ```
 
-# 2. Story notes
+# 2. ===== Story notes =====
 
 Given that IL1B-responsive gene expression patterns in A549s cells follow ... kinetics, carry ... functional signatures, we next want to understand the degree of concordance (or discordance) between A549 and primary cells.
 
 Justify comparison at 6 h: majority of IL1B response observed at this timepoint, maybe most NFkappaB dependence as well? Maybe richest functional annotations? Other justifications?
 
-## 1. IL1B responses seem to differ substantially between A549 and primary cells
+## 2.1. IL1B responses seem to differ substantially between A549 and primary cells
 
-**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. These overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
+**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
 
 From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. The problem is worse for downregulated genes than it is for upregulated.
 
-```{r old venns, out.width="33%", fig.show='hold'}
+```{r old venns, out.width="33%", fig.show='hold', cache=T}
 source("modules/fig-old-venns.R")
 cleanup_objects()
 ```
 
-## 2. However, differences likely stem from between-donor variation
+## 2.2. However, differences stem from between-donor variation
 
-## 3. In fact, A549s effectively capture what "could" happen  across donors
+```{r calculate per-donor metrics, cache=T}
+source("modules/per-donor-set-theory.R")
+source("modules/compute-heavy-heatmaps.R")
+cleanup_objects()
+```
+
+```{r generate per-donor figs, cache=T, fig.show='hide'}
+source("modules/fig-per-donor-threshold-metrics.R")
+```
+
+Low overlaps are likely a result of aggregating by celltype. A549 cells are derived from one individual, so each of the four replicates reflects one donor. Primary cells are derived from different individuals, where each replicate corresponds to a different donor. Thus, DEA easily identifies small/rare regulatory events in A549s, while penalizing donor-specific regulation in primary cells. 
+
+**(A)** A549 cells have more or less the same number of "regulated" genes (abs(log2fold) > 1) across replicates, and **(B)** lower variability in log2fold across replicates (*do stats on this?*). **(C)** A549 replicates are more concordant in which genes they regulate while individuals donors are more variable. **(D)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, A549 cells tend to show consistent responses across replicates while primary cells show blocks of up- or down-regulation on a per-donor basis.
+
+```{r per-donor figs 1, fig.height=3.5, fig.width=8}
+temp_figs[[1]]
+```
+
+```{r per-donors figs 2, fig.height=7, fig.width=5, out.width="50%", fig.show='hold'}
+temp_figs[[2]]
+temp_figs[[3]]
+cleanup_objects()
+```
+
+## 2.3. In fact, A549s effectively capture what "could" happen  across donors
 
 A549s do not recapitulate any single primary IL1B response, but capture a large fraction of the population-level transcriptional response (with a preference for induced programs). Same for each donor vs all other donors?
 
-## 4. Separately, all celltypes share a small, conserved, "core" program
+## 2.4. Separately, all celltypes share a small, conserved, "core" program
 
 These genes have ... functional signature, follow ... kinetic, are ... NFkappaB dependent (and should be the focus of future studies?)
 
-
-
-# 3. Figures and code to be sorted into story notes
+# 3. ===== Figures and code to be sorted into story notes =====
 
 
 ## Understanding individual variation in gene expression
 
 ### Donors vs A549
-
-
-
-One possible reason for differences: A549s are derived from one individual, so four sequencing replicates may have low variability + higher significance. Each sequencing replicate for primary cells is a different individual, so higher variability + lower significance. Ignoring FDR entirely (i.e., only using the abs(log2fold) >= 1 threshold), A549 and primary cells actually have similarly sized regulated gene pools (panel A). In A549s, variation in tpm-derived log2fold values tend to be lower (panel B) and a greater proportion of the rep pool meets log2fold thresholds (panel C).
-
-*Fixed: problem 040626, discrepancy between Venn and spread gene counts.*
-
-```{r calculate per-donor metrics}
-source("modules/per-donor-set-theory.R")
-cleanup_objects()
-```
-
-```{r basic per-donor threshold metrics, fig.height=3, fig.width=8}
-source("modules/fig-per-donor-threshold-metrics.R")
-cleanup_objects()
-```
 
 **Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(top circle)** vs A549 cells **(bottom circle)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size).** This analysis was performed on regulated genes in general (panel A), IL1B-upregulated genes (panel B), and IL1B-downregulated genes (panel C)
 
@@ -132,7 +142,7 @@ source("modules/fig-per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
-**Where do primary donors and A549s sit in relation to each other?** 
+**Where do primary donors and A549s sit in relation to each other?**
 
 This is technically a 10-way comparison so Venns no longer work -- use an UpSet plot instead. Panel A is the intersect between *all donors and A549*, B is the intersect between *donors only*. Notice 70 genes shared between all donors (B), where 54 of these are also shared with A549 (A).
 
@@ -174,7 +184,7 @@ setdiff(
 )
 ```
 
-### IN PROGRESS: Donors vs donors
+### Donors vs donors
 
 **"Toy" example:** *at 5+ sets -- Venn impossible, Euler misleading, UpSet pretty good*
 
@@ -207,11 +217,11 @@ After writing and testing R code that could recreate the manually-calculated "52
 
 ```{r, fig.height=4, fig.width=4}
 # # confirm the manual 52% figure:
-# 
+#
 # df <- per_donor_data[["logical_matrix"]] %>%
 #   select(contains("A549"), contains("ALI")) %>%
 #   rownames_to_column("Gene")
-# 
+#
 # summary_table <- df %>%
 #   mutate(row_total = rowSums(across(-Gene))) %>%
 #   pivot_longer(
@@ -291,7 +301,7 @@ df <- atLeastOneShared_summary %>%
   )
 
 print(
-  
+
   ggplot(df,
          aes(x = criterion, y = value, color = color, label = label)
   ) +
@@ -310,11 +320,11 @@ print(
     scale_color_manual(values = c("firebrick2", "black")) +
     labs(y = NULL, x = NULL) +
     guides(color = "none") +
-    
+
     geom_text_repel(
       nudge_y = -5, nudge_x = -0.3
     )
-  
+
 )
 
 cleanup_objects()
@@ -322,7 +332,7 @@ cleanup_objects()
 
 **Are primary cells more variable in IL1B-regulated gene expression than A549 cells?** Should be. Check with PCA below:
 
-The PCA dispersion of HBEs is not statistically different from A549s, but ALIs is different from A549s. 
+The PCA dispersion of HBEs is not statistically different from A549s, but ALIs is different from A549s.
 
 ```{r}
 reg_genes <- rownames(per_donor_data[["logical_matrix"]])
@@ -330,27 +340,27 @@ upreg_genes <- rownames(per_donor_data[["logical_matrix_upreg"]])
 downreg_genes <- rownames(per_donor_data[["logical_matrix_downreg"]])
 
 pca_from_tpm <- function(.treatment, .genelist){
-  
+
   mat <- tpm %>%
     filter(treatment == .treatment, Gene %in% .genelist) %>%
     mutate(name = paste(celltype, rep)) %>%
     select(Gene, name, log2fold) %>%
     pivot_wider(names_from = "name", values_from = "log2fold") %>%
     column_to_rownames("Gene")
-  
+
   pca <- prcomp(t(mat), scale. = TRUE)
-  
+
   pca_df <- pca$x %>%
     as.data.frame() %>%
     rownames_to_column("name") %>%
     select(name, PC1, PC2, PC3, PC4) %>%
     separate(name, into = c("celltype", "rep"), sep = " ", remove = F)
-  
+
   centroids <- pca_df %>%
     group_by(celltype) %>%
     summarize(across(PC1:PC4, mean), .groups = "drop")
-  
-  
+
+
   pca_df <- pca_df %>%
     left_join(centroids, by = "celltype", suffix = c("", "_centroid")) %>%
     rowwise() %>%
@@ -362,7 +372,7 @@ pca_from_tpm <- function(.treatment, .genelist){
       )
     ) %>%
     ungroup()
-  
+
   dispersion <- pca_df %>%
     group_by(celltype) %>%
     summarize(
@@ -370,14 +380,14 @@ pca_from_tpm <- function(.treatment, .genelist){
     sd_dist   = sd(dist_to_centroid),
     .groups = "drop"
   )
-  
+
   list(
     "matrix" = mat,
     "pca" = pca,
     "summary" = pca_df,
     "dispersion" = dispersion
   )
-  
+
 }
 
 test <- pca_from_tpm("IL1B", reg_genes)

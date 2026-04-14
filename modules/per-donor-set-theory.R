@@ -2,6 +2,7 @@
 # === initialize per donor data object =========================================
 per_donor_data <- list()
 
+# collapse A549 reps into one "entity"
 per_donor_data[["tpm_by_donor"]] <- tpm %>%
   filter(treatment == "IL1B") %>%
   mutate(rep = if_else(celltype == "A549", "mean", rep)) %>%
@@ -13,9 +14,23 @@ per_donor_data[["thresholded_log2fold"]] <- per_donor_data[["tpm_by_donor"]] %>%
   summarize(log2fold = mean(log2fold), .groups = "drop") %>%
   mutate(meets_threshold = abs(log2fold) >= 1)
 
+# treat each A549 rep as separate
+
+per_donor_data[["tpm_by_donor_A549separate"]] <- tpm %>%
+  filter(treatment == "IL1B") %>%
+  mutate(name = paste(celltype, rep)) %>%
+  select(Gene, name, rep, celltype, treatment, tpm, log2tpm, fold, log2fold)
+
+per_donor_data[["thresholded_log2fold_A549separate"]] <- per_donor_data[["tpm_by_donor_A549separate"]] %>%
+  group_by(Gene, name, rep, celltype) %>%
+  summarize(log2fold = mean(log2fold), .groups = "drop") %>%
+  mutate(meets_threshold = abs(log2fold) >= 1)
+
 # === basic counts and spread on a per-donor basis =============================
 
 # counts: how many threshold-meeting genes in each donor?
+
+     # a549 meaned
 counts <- per_donor_data[["thresholded_log2fold"]] %>%
   filter(meets_threshold) %>%
   group_by(name, rep, celltype) %>%
@@ -23,7 +38,17 @@ counts <- per_donor_data[["thresholded_log2fold"]] %>%
   arrange(name) %>%
   mutate(name = factor(name, levels = unique(name)))
 
+     # a549 reps separate
+counts_A549separate <- per_donor_data[["thresholded_log2fold_A549separate"]] %>%
+  filter(meets_threshold) %>%
+  group_by(name, rep, celltype) %>%
+  summarize(n = length(unique(Gene)), .groups = "drop") %>%
+  arrange(name) %>%
+  mutate(name = factor(name, levels = unique(name)))
+
 # spread: sd and %meetingThreshold for each gene, in each celltype
+
+     # a549 meaned
 spread <- per_donor_data[["thresholded_log2fold"]] %>%
   group_by(Gene, celltype) %>%
   filter(any(meets_threshold)) %>%
@@ -32,6 +57,25 @@ spread <- per_donor_data[["thresholded_log2fold"]] %>%
   distinct() %>%
   left_join(
     per_donor_data[["tpm_by_donor"]]
+  ) %>%
+  group_by(Gene, celltype) %>%
+  summarize(
+    sd = sd(log2fold),
+    n_meets_threshold = length(Gene[abs(log2fold) >= 1]),
+    nreps = length(Gene),
+    percent_meets_threshold = 100 * n_meets_threshold / nreps,
+    .groups = "drop"
+  )
+
+     # a549 reps separate
+spread_A549separate <- per_donor_data[["thresholded_log2fold_A549separate"]] %>%
+  group_by(Gene, celltype) %>%
+  filter(any(meets_threshold)) %>%
+  ungroup() %>%
+  select(-log2fold) %>%
+  distinct() %>%
+  left_join(
+    per_donor_data[["tpm_by_donor_A549separate"]]
   ) %>%
   group_by(Gene, celltype) %>%
   summarize(
@@ -51,6 +95,12 @@ sets <- per_donor_data[["thresholded_log2fold"]] %>%
   filter(abs(log2fold) >= 1) %>%
   group_by(name, celltype, rep) %>%
   summarize(genes = list(unique(Gene)), .groups = "drop")
+
+    # a549 reps separate
+    sets_A549separate <- per_donor_data[["thresholded_log2fold_A549separate"]] %>%
+      filter(abs(log2fold) >= 1) %>%
+      group_by(name, celltype, rep) %>%
+      summarize(genes = list(unique(Gene)), .groups = "drop")
 
 sets_upreg <- per_donor_data[["thresholded_log2fold"]] %>%
   filter(log2fold >= 1) %>%
@@ -98,6 +148,21 @@ overlaps <- sets %>%
     )
   )
 
+    # a549 reps separate
+    overlaps_A549separate <- sets_A549separate %>%
+      mutate(
+        n_genes = map_int(genes, length),
+        overlap_genes = map(genes, ~ intersect(a549_genes, .x)),
+        overlap = map_int(genes, ~ length(intersect(a549_genes, .x))),
+        union = map_int(genes, ~ length(union(a549_genes, .x))),
+        jaccard = overlap / union,
+        title = paste0(
+          name,
+          "\nJ=", round(jaccard, 2),
+          " | n=", union
+        )
+      )
+
 overlaps_upreg <- sets_upreg %>%
   mutate(
     n_genes = map_int(genes, length),
@@ -142,6 +207,18 @@ logical_matrix <- overlaps %>%
   ) %>%
   column_to_rownames("genes")
 
+    # a549 reps separate
+    logical_matrix_A549separate <- overlaps_A549separate %>%
+      select(name, genes) %>%
+      unnest(genes) %>%
+      mutate(value = 1) %>%
+      pivot_wider(
+        names_from = "name",
+        values_from = "value",
+        values_fill = 0
+      ) %>%
+      column_to_rownames("genes")
+
 logical_matrix_upreg <- overlaps_upreg %>%
   select(name, genes) %>%
   unnest(genes) %>%
@@ -179,14 +256,17 @@ a5_exclude_downreg <- logical_matrix_downreg %>%
   filter(!if_all(everything(), ~ .x == 0))
 
 
-# === write calculations to main per-donor data object
+# === write calculations to main per-donor data object ===
 
 per_donor_data[["counts"]] <- counts
 per_donor_data[["spread"]] <- spread
+per_donor_data[["counts_A549separate"]] <- counts_A549separate
+per_donor_data[["spread_A549separate"]] <- spread_A549separate
 
 per_donor_data[["overlaps"]] <- overlaps
 per_donor_data[["overlaps_upreg"]] <- overlaps_upreg
 per_donor_data[["overlaps_downreg"]] <- overlaps_downreg
+per_donor_data[["overlaps_A549separate"]] <- overlaps_A549separate
 
 per_donor_data[["overlaps_summary"]] <- rbind(
   per_donor_data[["overlaps"]] %>%
@@ -200,6 +280,7 @@ per_donor_data[["overlaps_summary"]] <- rbind(
 per_donor_data[["logical_matrix"]] <- logical_matrix
 per_donor_data[["logical_matrix_upreg"]] <- logical_matrix_upreg
 per_donor_data[["logical_matrix_downreg"]] <- logical_matrix_downreg
+per_donor_data[["logical_matrix_A549separate"]] <- logical_matrix_A549separate
 
 per_donor_data[["logical_matrix_a5Exclude"]] <- a5_exclude
 per_donor_data[["logical_matrix_a5Exclude_upreg"]] <- a5_exclude_upreg

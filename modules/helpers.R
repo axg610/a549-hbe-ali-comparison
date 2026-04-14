@@ -54,8 +54,12 @@ plot_euler <- function(
     plotType = "euler",
     shapeType = "circle", 
     plotTitle = "title here",
-    quants = c("counts"),   # vector of metrics to show (e.g., counts, percent)
-    cutoff = 0              # intersections smaller than this number will be removed
+    quants = c("counts"),     # vector of metrics to show (e.g., counts, percent)
+    cutoff = 0,               # intersections smaller than this number will be removed
+    returnAsFunction = FALSE, # helps for patchworking multiple eulers together
+    showLabels = T,
+    fillColors = c("#FFFFFF", "#D9D9D9", "#A6CEE3"),
+    aspectRatio = 1
 ){
   
   # a wrapper for the eulerr:euler function to create a Euler diagram given a
@@ -86,12 +90,30 @@ plot_euler <- function(
     obj <- venn(obj)
   }
   
-  plot(
-    obj,
-    quantities = list(type = quants),
-    main = plotTitle,
-    asp = 1
-  )
+  if(returnAsFunction){
+    function() {
+      plot(
+        obj,
+        quantities = list(type = quants),
+        main = plotTitle,
+        asp = aspectRatio,
+        labels = showLabels,
+        fills = list(fill = fillColors)
+      )
+    }
+  }
+  
+  else if(!returnAsFunction){
+    plot(
+      obj,
+      quantities = list(type = quants),
+      main = plotTitle,
+      asp = aspectRatio,
+      labels = showLabels,
+      fills = list(fill = fillColors)
+    )
+    
+  }
   
 }
 
