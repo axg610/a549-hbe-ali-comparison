@@ -67,7 +67,7 @@ euler2 <- per_donor_data[["logical_matrix_A549separate"]] %>%
   filter(!if_all(everything(), ~ .x == 0)) %>%
   plot_euler(
     returnAsFunction = T, 
-    fillColors = "white", 
+    fillColors = "#D9D9D9", 
     showLabels = F, 
     plotTitle = "ALI donors",
     aspectRatio = 0.5
@@ -78,7 +78,7 @@ euler3 <- per_donor_data[["logical_matrix_A549separate"]] %>%
   filter(!if_all(everything(), ~ .x == 0)) %>%
   plot_euler(
     returnAsFunction = T, 
-    fillColors = "white", 
+    fillColors = "#A6CEE3", 
     showLabels = F, 
     plotTitle = "HBE donors",
     aspectRatio = 0.5
