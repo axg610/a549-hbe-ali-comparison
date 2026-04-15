@@ -43,7 +43,7 @@ plot_upset <- function(logicalMatrix, minSize = 50, plotTitle = "title here"){
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
         panel.grid.minor = element_blank(),
-        plot.title = element_text(size = 20, hjust = 0.05)
+        # plot.title = element_text(size = 20, hjust = 0.05)
       ) +
       labs(title = plotTitle)
   )

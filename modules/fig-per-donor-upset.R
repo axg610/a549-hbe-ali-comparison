@@ -1,42 +1,37 @@
+
+
+
 # all regulated genes, regardless of direction
 
 p1 <- plot_upset(
   logicalMatrix = per_donor_data[["logical_matrix"]], 
   plotTitle = "(A) IL1B-regulated",
-  minSize = 40
+  minSize = 35
   )
-
-p2 <- plot_upset(
-  per_donor_data[["logical_matrix_a5Exclude"]], 
-  plotTitle = "(B) IL1B-regulated, primary only",
-  minSize = 40
-  )
-
-print(
-  wrap_plots(p1, p2, nrow = 2)
-)
 
 # separated by direction
 
-p1 <- plot_upset(
-  logicalMatrix = per_donor_data[["logical_matrix_upreg"]], 
-  plotTitle = "(C) IL1B-upregulated"
-  )
-
 p2 <- plot_upset(
-  logicalMatrix = per_donor_data[["logical_matrix_downreg"]], 
-  plotTitle = "(D) IL1B-downregulated"
-  )
+  logicalMatrix = per_donor_data[["logical_matrix_upreg"]], 
+  plotTitle = "(B) IL1B-upregulated",
+  minSize = 50
+)
 
 p3 <- plot_upset(
-  per_donor_data[["logical_matrix_a5Exclude_upreg"]], 
-  plotTitle = "(E) IL1B-upreg, primary only")
-
-p4 <- plot_upset(
-  per_donor_data[["logical_matrix_a5Exclude_downreg"]], 
-  plotTitle = "(F) IL1B-downreg, primary only")
+  logicalMatrix = per_donor_data[["logical_matrix_downreg"]], 
+  plotTitle = "(C) IL1B-downregulated",
+  minSize = 50
+)
 
 print(
-  wrap_plots(p1, p2, p3, p4, nrow = 2)
+  wrap_plots(
+    p1,
+    wrap_plots(
+      p2, 
+      p3, 
+      nrow = 1
+    ),
+    nrow = 2
+  )
 )
 
