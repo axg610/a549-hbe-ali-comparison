@@ -10,6 +10,11 @@ knitr::opts_chunk$set(
   message = FALSE
 )
 
+# for functional annotation
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(msigdbr)
+
 # for set theory
 library(ggVennDiagram)
 library(ComplexUpset)
@@ -32,11 +37,11 @@ Repo at https://github.com/axg610/a549-hbe-ali-comparison
 
 We can edit in PowerPoint/apply a consistent theme to all the figures at the very end
 
-# 1. **===== Alignment and DEA =====**
+# **1. Alignment and DEA**
 
 **Raw datasets:** A549, primary hBECs (submersion culture, HBE), and primary hBECs (air-liquid interface culture, ALI) treated with IL1B, glucocorticoid, or both at 6h. This is actually three experiments at different timepoints, so for now we use their shared timepoint (6 h post-treatment).
 
-Alignment performed with kallisto version 0.46.1 and normalization/DEA performed with sleuth version something on the cluster. Everything documented in `kallisto-sleuth.md`. I used individual sleuth runs for each cell type, modeled as `~treatment`. Effect sizes ("log2fold") and FDR are from Wald test using unstimulated (NS) samples as baseline. I also modeled everything together under model `~treatment*condition` for interaction testing. Finally, raw tpm values were extracted.
+Alignment performed with kallisto version 0.46.1 and normalization/DEA performed with sleuth version ??? on the cluster. Everything documented in `kallisto-sleuth.md`. I used individual sleuth runs for each cell type, modeled as `~treatment`. Effect sizes ("log2fold") and FDR are from Wald test using unstimulated (NS) samples as baseline. I also modeled everything together under model `~treatment*condition` for interaction testing. Raw tpm values were also extracted.
 
 ```{r load data, cache=T}
 dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
@@ -45,47 +50,35 @@ multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 ```
 
 ```{r data previews, cache=T}
-knitr::kable(
-  dea %>% filter(Gene == "NFKBIA"),
-  caption = "Example univariate DEA data (~treatment)", 
-  align = "c"
-)
-
-knitr::kable(
-  multivar %>% filter(Gene %in% c("NFKBIA", "TNFAIP3", "IRAK3")),
-  caption = "Example multivariate DEA data (~treatment)", 
-  align = "c"
-)
-
-knitr::kable(
-  tpm %>% filter(Gene == "NFKBIA") %>% .[1:20,],
-  caption = "Example tpm data, first 20 rows for representative gene", 
-  align = "c"
-)
+# knitr::kable(
+#   dea %>% filter(Gene == "NFKBIA"),
+#   caption = "Example univariate DEA data (~treatment)", 
+#   align = "c"
+# )
+# 
+# knitr::kable(
+#   multivar %>% filter(Gene %in% c("NFKBIA", "TNFAIP3", "IRAK3")),
+#   caption = "Example multivariate DEA data (~treatment*condition)", 
+#   align = "c"
+# )
+# 
+# knitr::kable(
+#   tpm %>% filter(Gene == "NFKBIA") %>% .[1:20,],
+#   caption = "Example tpm data, first 20 rows for representative gene", 
+#   align = "c"
+# )
 ```
 
-# 2. **===== Story notes =====**
+# **2. Story notes**
 
-Given that IL1B-responsive gene expression patterns in A549s cells follow ... kinetics, carry ... functional signatures, we next want to understand the degree of concordance (or discordance) between A549 and primary cells.
+Given that IL1B-responsive gene expression patterns in A549s cells follow ... kinetics, carry ... functional signatures, we next want to compare the transcriptomic signatures of A549 cells and primary cells at 6 h (time of most regulation)... With the ultimate aim of understanding the extent to which A549 cells recapitulate donor responses to IL1B.
 
-Justify comparison at 6 h: majority of IL1B response observed at this timepoint, maybe most NFkappaB dependence as well? Maybe richest functional annotations? Other justifications?
+## 2.1. Characterizing variability in IL1B response at the donor level
 
-## 2.1. IL1B responses seem to differ substantially between A549 and primary cells
+A549 cells are derived from one individual, where each of the four replicates reflects one donor. Primary cells are derived from different individuals, where each replicate corresponds to a different donor. Thus, donor-specific regulatory events will be penalized in primary cell data and emphasized in A549 data. Before proceeding with differential expression analysis, it is important to assess IL1B-responsive transcription at the individual level.
 
-**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
+**Primary cell donors are more variable than A549 cell replicates.** Counts and variability for regulated genes (abs(log2fold) > 1)  were assessed across sequencing replicates. **(A)** A549 cells have more or less the same number of "regulated" genes across replicates, and **(B)** lower variability in log2fold across replicates (*do stats on this?*). **(C)** A549 replicates are more concordant in which genes they regulate while individuals donors are more variable. **(D)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, A549 cells tend to show consistent responses across replicates while primary cells show blocks of up- or down-regulation on a per-donor basis.
 
-From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated.
-
-```{r old venns, out.width="33%", fig.show='hold', cache=T}
-source("modules/fig-old-venns.R")
-cleanup_objects()
-```
-
-## 2.2. However, differences stem from between-donor variation
-
-Low overlaps are likely a result of aggregating by celltype. A549 cells are derived from one individual, so each of the four replicates reflects one donor. Primary cells are derived from different individuals, where each replicate corresponds to a different donor. Thus, DEA easily identifies small/rare regulatory events in A549s, while penalizing donor-specific regulation in primary cells. **Instead of DEA, we can call a gene "regulated" if it meets the abs(log2fold) >= 1 threshold in a donor.**
-
-**(A)** A549 cells have more or less the same number of "regulated" genes (abs(log2fold) > 1) across replicates, and **(B)** lower variability in log2fold across replicates (*do stats on this?*). **(C)** A549 replicates are more concordant in which genes they regulate while individuals donors are more variable. **(D)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, A549 cells tend to show consistent responses across replicates while primary cells show blocks of up- or down-regulation on a per-donor basis.
 
 ```{r calculate per-donor metrics, cache=T}
 source("modules/per-donor-set-theory.R")
@@ -93,7 +86,7 @@ source("modules/compute-heavy-heatmaps.R")
 cleanup_objects()
 ```
 
-```{r generate per-donor figs, cache=T, fig.show='hide'}
+```{r generate per-donor figs, cache=T, include=F}
 source("modules/fig-per-donor-threshold-metrics.R")
 ```
 
@@ -107,48 +100,239 @@ temp_figs[[3]]
 cleanup_objects()
 ```
 
-**(A) Individual variation dominates shared expression.** Compared to genes regulated in only one donor (left side, first 11 bars), there are much fewer genes shared between donors (right side) *(do a manual count?)*. Splitting the visualization into **(B)** upregulated and **(C)** downregulated genes reveals that A549s have "normal" IL1B-upregulated signatures (middle-of-the-pack in terms of unique upreg genes), but abberant IL1B-downregulated signatures (has the most downregulated genes). Additionally, the 54 completely conserved genes are exclusively upregulated. This suggests that the IL1B-induced response is more core/conserved while the downregulated response is more context/individual-specific.
+**Donors show more uniquely regulated genes than shared genes.** To understand individual variation, A549 cell replicates were averaged to represent one donor. Then overlaps between the A549 donor and all other primary donors were visualized as an UpSet plot. **(A)** Compared to genes regulated in only one donor (left side, first 11 bars), there are much fewer genes shared between donors (right side) *(do a manual count?)*. Splitting the visualization into **(B)** upregulated and **(C)** downregulated genes reveals that A549s have "normal" IL1B-upregulated signatures (middle-of-the-pack in terms of unique upreg genes), but abberant IL1B-downregulated signatures (has the most downregulated genes). Additionally, the 54 completely conserved genes are exclusively upregulated. This suggests that the IL1B-induced response is more core/conserved while the downregulated response is more context/individual-specific.
 
 ```{r upset plots between donors, fig.height=8, fig.width=8}
 source("modules/fig-per-donor-upset.R")
 cleanup_objects()
 ```
 
-## 2.3. A549s effectively capture what "could" happen across donors
+**Transcriptomic overlaps between each donor and A549 cells are small.** To assess similarities between each primary cell donor and the A549 mean, regulated genes were compared between each primary cell donor and A549 cells. **(A)** Only a small percentage (<15%) of each donor's regulation pool is recapitulated by A549 cells. This is less of a problem for IL1B-induced genes **(B)** and more of a problem for IL1B-downregulated genes **(C)**. J = Jaccard index, n = total number of genes.
 
-## 2.4. Separately, all celltypes share a small, conserved, "core" program
+```{r pairwise venns vs a549, fig.width=8}
+source("modules/fig-per-donor-pairwise-venns.R")
+cleanup_objects()
+```
+
+Plotting each donor-to-A549 comparison, we see that overlaps tend to be bigger for upregulated genes and smaller for downregulated. T-test for $Jaccard_{\text{upreg}}$ vs $Jaccard_{\text{downreg}}$ (bottom right panel) returns P=0.0001169 (***).
+
+```{r pairwise venns summary, fig.height=4, fig.width=4}
+source("modules/fig-per-donor-pairwise-venns-summary.R")
+cleanup_objects()
+```
+
+## [[IN PROGRESS]] 2.2. Functional consequences of between-donor variability
+
+**TODO:** write up the explanation for this
+
+```{r scale up, cache=T}
+
+go_results <- data.frame()
+
+for(ct in c("A549", "ALI", "HBE")){
+  
+  # rank all "regulated" genes by SD between donors
+  
+  ranked <- tpm %>%
+    filter(
+      celltype == ct,
+      treatment == "IL1B"
+    ) %>%
+    group_by(Gene) %>%
+    filter(any(log2fold >= 1)) %>%
+    summarize(sd = -sd(log2fold), .groups = "drop") %>%
+    arrange(desc(sd)) %>%
+    deframe()
+  
+  # ranked list of all genes
+  all_genes <- names(ranked)
+  
+  # calculate and cut the top/bottom 10%
+  n <- length(all_genes)
+  cut <- floor(0.10 * n)
+  top_genes <- all_genes[1:cut]
+  bottom_genes <- all_genes[(n - cut + 1):n]
+  
+  # run and extract top results, enrichGO on biological process
+  
+  top_go_bp <- enrichGO(
+    gene          = top_genes,
+    universe      = all_genes,
+    OrgDb         = org.Hs.eg.db,
+    keyType       = "SYMBOL",
+    ont           = "BP",
+    pAdjustMethod = "BH",
+    qvalueCutoff  = 0.05,
+    readable      = TRUE
+  )
+  
+  top_go_result <- top_go_bp@result %>%
+    mutate(
+      celltype = ct,
+      treatment = "IL1B",
+      group = "top 10%",
+      .before = 1
+    )
+  
+  rownames(top_go_result) <- NULL
+  
+  go_results <- rbind(go_results, top_go_result)
+  
+  # run and extract bottom results, enrichGO on biological process
+  
+  bottom_go_bp <- enrichGO(
+    gene          = bottom_genes,
+    universe      = all_genes,
+    OrgDb         = org.Hs.eg.db,
+    keyType       = "SYMBOL",
+    ont           = "BP",
+    pAdjustMethod = "BH",
+    qvalueCutoff  = 0.05,
+    readable      = TRUE
+  )
+  
+  bottom_go_result <- bottom_go_bp@result %>%
+    mutate(
+      celltype = ct,
+      treatment = "IL1B",
+      group = "bottom 10%",
+      .before = 1
+    )
+  
+  rownames(bottom_go_result) <- NULL
+  
+  go_results <- rbind(go_results, bottom_go_result)
+  
+}
+```
+
+```{r fig.width=5, fig.height=7, out.width='50%', fig.show='hold'}
+
+# holy fuck
+# clean this up please
+
+prep_go <- function(df, ct, grp) {
+  
+  df %>%
+    filter(celltype == ct, group == grp, Count >= 10) %>%
+    slice_max(FoldEnrichment, n = 10, with_ties = FALSE) %>%
+    mutate(
+      Description = str_wrap(str_trunc(Description, 70), 35),
+      Description = factor(Description, levels = rev(Description))
+    )
+  
+}
+
+base_plot <- function(
+    df, 
+    title,
+    size_limits = c(0, 30),
+    x_limits = c(0, 10),
+    fill_limits = c(0, 4)) {
+  ggplot(
+    df,
+    aes(
+      x = FoldEnrichment,
+      y = Description,
+      fill = -log10(p.adjust),
+      size = Count
+    )
+  ) +
+    geom_point(shape = 21) +
+    scale_size(
+      limits = size_limits, range = c(0, 10)
+    ) +
+    scale_fill_gradient(
+      low = "white", high = "black",
+      limits = fill_limits
+    ) +
+    scale_x_continuous(
+      limits = x_limits,
+      expand = expansion(mult = 0.15)
+    ) +
+    labs(
+      x = "fold enrichment", 
+      y = title,
+      size = "count",
+      fill = expression(log[10] * "FDR")
+    ) +
+    theme_minimal()
+}
+
+p1 <- prep_go(go_results, "HBE", "top 10%") %>%
+  base_plot("HBE", x_limits = c(2.3, 4.0)) +
+  theme(
+    axis.title.y = element_text(size = 20),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank()
+  )
+
+p2 <- prep_go(go_results, "ALI", "top 10%") %>%
+  base_plot("ALI", x_limits = c(2.3, 4.0)) +
+  theme(
+    axis.title.y = element_text(size = 20),
+    panel.grid.minor = element_blank()
+  )
+
+(p1 / p2) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "A. most stably induced functions")
+
+
+p3 <- prep_go(go_results, "HBE", "bottom 10%") %>%
+  base_plot("HBE", x_limits = range(.$FoldEnrichment)) +
+  theme(
+    axis.title.y = element_text(size = 20),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank()
+  )
+
+p4 <- prep_go(go_results, "ALI", "bottom 10%") %>%
+  base_plot("ALI", x_limits = range(.$FoldEnrichment)) +
+  theme(
+    axis.title.y = element_text(size = 20),
+    panel.grid.minor = element_blank()
+  )
+
+(p3 / p4) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "B. most variably induced functions")
+
+cleanup_objects()
+```
+
+
+## 2.?. IL1B responses seem to differ substantially between A549 and primary cells
+
+**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
+
+From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated.
+
+```{r old venns, out.width="33%", fig.show='hold', cache=T}
+source("modules/fig-old-venns.R")
+cleanup_objects()
+```
+
+
+
+
+
+## 2.?. A549s effectively capture what "could" happen across donors
+
+## 2.?. All celltypes share a small, conserved, "core" program
 
 These genes have ... functional signature, follow ... kinetic, are ... NFkappaB dependent (and should be the focus of future studies?)
 
-# 3. **=== Figures and code to be sorted into story notes ===**
-
+# **3. Old or orphaned code (mostly junk)**
 
 ```{text, echo=T}
 <!-- ## Understanding individual variation in gene expression -->
 
 <!-- ### Donors vs A549 -->
 
-<!-- **Where does each primary donor sit in relation to A549?** For each primary cell donor, check overlap of log2fold-threshold-meeting genes in that donor **(top circle)** vs A549 cells **(bottom circle)**. Plots are also tagged with Jaccard index **(J)** and total number of genes **(n, union size).** This analysis was performed on regulated genes in general (panel A), IL1B-upregulated genes (panel B), and IL1B-downregulated genes (panel C) -->
-
-<!-- *"Fixed" colors on Venns. This package doesn't let you specify colors for different groups, so I set everything to white instead.* -->
-
-<!-- ```{r pairwise venns vs a549, fig.width=8} -->
-<!-- source("modules/fig-per-donor-pairwise-venns.R") -->
-<!-- cleanup_objects() -->
-<!-- ``` -->
-
-<!-- Some summary metrics for the pairwise Venns: -->
-
-<!-- - Union = everything in the A549 lobe, the donor lobe, and the intersect -->
-<!-- - Overlap = genes expressed in both A549 and the donor -->
-<!-- - Jaccard = $\frac{\text{overlap}}{\text{union}}$, high = big overlap, low = little to no overlap -->
-
-<!-- Each dot is one donor-to-A549 comparison. We see that overlaps are bigger when focusing on upregulated genes, and smaller when focusing on downregulated genes. Again showing that most commonality between cell types sits in the upregulated gene fraction. T-test between $Jaccard_{\text{upreg}}$ and $Jaccard_{\text{downreg}}$, the bottom right panel, shows P=0.0001169. -->
-
-<!-- ```{r pairwise venns summary, fig.height=4, fig.width=4} -->
-<!-- source("modules/fig-per-donor-pairwise-venns-summary.R") -->
-<!-- cleanup_objects() -->
-<!-- ``` -->
+<!-- // something used to be here // -->
 
 <!-- **Where do primary donors and A549s sit in relation to each other?** -->
 
