@@ -117,5 +117,36 @@ plot_euler <- function(
   
 }
 
-
+generic_l2f_heatmap_colors <- function(mat){
+  
+  # return a pretty log2fold heatmap color palette given a matrix
+  
+  colors = circlize::colorRamp2(
+    c(
+      seq(
+        quantile(mat, 0.02),
+        -0.05,
+        length = 75
+      ),
+      seq(
+        -0.49,
+        0.49,
+        length = 50
+      ),
+      seq(
+        0.5,
+        quantile(mat, 0.98),
+        length = 75
+      )
+    ),
+    colorRampPalette(
+      c(
+        "steelblue4", "steelblue2" , 
+        "white", 
+        "firebrick2", "firebrick4")
+      )(200)
+  )
+  
+  colors
+}
 
