@@ -123,11 +123,13 @@ cleanup_objects()
 
 ## [[IN PROGRESS]] 2.2. Functional consequences of between-donor variability
 
-**Inflammatory programs are stably regulated across donors.** To understand which transcriptional programs are highly variable vs conserved across donors, the union of all IL1B-induced genes in each cell type were ranked by -SD across all donors. Thus, top ranking genes are consistently/stably regulated by IL1B in all donors, while bottom ranking genes are highly variable between donors. The two extremes of these ranking were then sampled for gene ontology enrichment analysis (GO_BP_DIRECT), before plotting the top 10 GO terms. Terms with less than 10 genes were excluded to prevent poorly defined programs from dominated the ranking. **(A)** In both ALI and HBE cells, donors show stable induction of inflammatory and apoptotic programs. **(B)** Both ALI and HBE cells are more variable in expression of metabolic programs. HBE cells showed some enrichment for inflammatory responses. However, none of these enrichments reached significance.
+**Inflammatory programs are stably regulated across donors.** To understand which transcriptional programs are highly variable vs conserved across donors, the union of all IL1B-induced genes in each cell type were ranked by -SD across all donors. Thus, top ranking genes (green) are consistently/stably regulated by IL1B in all donors, while bottom ranking genes (purple) are highly variable between donors.
 
 ```{r run gene ontology on variable vs stable genes, cache=T}
 
-go_results <- data.frame()
+go_results <- list()
+
+go_results[["variable_vs_stable"]][["df"]] <- data.frame()
 
 for(ct in c("A549", "ALI", "HBE")){
   
@@ -176,8 +178,6 @@ for(ct in c("A549", "ALI", "HBE")){
   
   rownames(top_go_result) <- NULL
   
-  go_results <- rbind(go_results, top_go_result)
-  
   # run and extract bottom results, enrichGO on biological process
   
   bottom_go_bp <- enrichGO(
@@ -201,12 +201,126 @@ for(ct in c("A549", "ALI", "HBE")){
   
   rownames(bottom_go_result) <- NULL
   
-  go_results <- rbind(go_results, bottom_go_result)
+  # save dataframes to main object
+  
+  go_results[["variable_vs_stable"]][["df"]] <- rbind(
+    go_results[["variable_vs_stable"]][["df"]], 
+    top_go_result
+    )
+  
+  go_results[["variable_vs_stable"]][["df"]] <- rbind(
+    go_results[["variable_vs_stable"]][["df"]], 
+    bottom_go_result
+  )
+  
+  # save genelists to main object
+  
+  go_results[["variable_vs_stable"]][[
+    paste0(ct, "_IL1B_top10percentInduced")
+  ]] <- top_genes
+  
+  go_results[["variable_vs_stable"]][[
+    paste0(ct, "_IL1B_bottom10percentInduced")
+  ]] <- bottom_genes
+  
+  go_results[["variable_vs_stable"]][[
+    paste0(ct, "_IL1B_allInduced")
+  ]] <- all_genes
+  
+  go_results[["variable_vs_stable"]][[
+    paste0(ct, "_IL1B_allInduced_sd")
+  ]] <- ranked
   
 }
 
 cleanup_objects()
 ```
+
+```{r plot heatmap of sd rankings, fig.height=4, fig.width=4, out.width='50%', fig.show='hold'}
+
+for(ct in c("ALI", "HBE")){
+  
+  # get matrix and genelists
+  query <- paste0(ct, "_IL1B_allInduced")
+  topquery <- paste0(ct, "_IL1B_top10percentInduced")
+  bottomquery <- paste0(ct, "_IL1B_bottom10percentInduced")
+  
+  genelist <- go_results[["variable_vs_stable"]][[query]]
+  top_genes <- go_results[["variable_vs_stable"]][[topquery]]
+  bottom_genes <- go_results[["variable_vs_stable"]][[bottomquery]]
+  
+  mat <- tpm %>%
+    filter(
+      treatment == "IL1B",
+      Gene %in% genelist,
+      celltype == ct
+    ) %>%
+    select(Gene, rep, log2fold) %>%
+    pivot_wider(values_from = "log2fold", names_from = "rep") %>%
+    mutate(Gene = factor(Gene, levels = genelist)) %>%
+    arrange(Gene) %>%
+    column_to_rownames("Gene") %>%
+    as.matrix()
+  
+  # set colors
+  colors <- generic_l2f_heatmap_colors(mat)
+  
+  # assign groups by membership
+  group <- case_when(
+    rownames(mat) %in% top_genes ~ "top 10% -SD (most stable)",
+    rownames(mat) %in% bottom_genes ~ "bottom 10% -SD (most variable)",
+    TRUE ~ "middle"
+  )
+  
+  group <- factor(
+    group, 
+    levels = c(
+      "top 10% -SD (most stable)", 
+      "middle", 
+      "bottom 10% -SD (most variable)"
+      )
+    )
+  
+  # annotation
+  row_ha <- rowAnnotation(
+    group = group,
+    col = list(
+      group = c(
+        "top 10% -SD (most stable)" = "aquamarine3",
+        middle = "grey77",
+        "bottom 10% -SD (most variable)" = "orchid3"
+      )
+    ),
+    show_annotation_name = FALSE,
+    border = TRUE
+  )
+  
+  # draw hm
+  hm <- Heatmap(
+    mat,
+    cluster_rows = FALSE,
+    cluster_columns = TRUE,
+    show_column_dend = FALSE,
+    show_row_names = FALSE,
+    col = colors,
+    name = "log2fold",
+    column_title = ct,
+    height = unit(3, "inches"),
+    width = unit(1, "inches"),
+    left_annotation = row_ha,
+    border = TRUE
+  )
+  
+  print(hm)
+  
+}
+
+cleanup_objects()
+
+
+```
+
+The two extremes of these rankings were taken for gene ontology enrichment analysis (GO_BP_DIRECT), and then the top 10 terms in each case were plotted. Terms with less than 10 genes were excluded to prevent poorly defined programs from dominated the ranking. **(C)** In both ALI and HBE cells, donors show stable induction of inflammatory and apoptotic programs. **(D)** Both ALI and HBE cells are more variable in expression of metabolic programs. HBE cells showed some enrichment for inflammatory responses. However, none of these enrichments reached significance.
 
 ```{r plot variable vs stable GO, fig.width=5, fig.height=7, out.width='50%', fig.show='hold'}
 
@@ -275,7 +389,7 @@ base_plot <- function(
 # show top 10% most stable genes in HBEs
 
 p1 <- prep_go(
-  df  = go_results, 
+  df  = go_results[["variable_vs_stable"]][["df"]], 
   ct  = "HBE", 
   grp = "top 10%"
   ) %>%
@@ -292,7 +406,7 @@ p1 <- prep_go(
 
 # show top 10% most stable genes in ALIs
 p2 <- prep_go(
-  df  = go_results, 
+  df  = go_results[["variable_vs_stable"]][["df"]], 
   ct  = "ALI", 
   grp = "top 10%") %>%
   base_plot(
@@ -311,7 +425,7 @@ p2 <- prep_go(
 # show top 10% most variable genes in HBEs
 
 p3 <- prep_go(
-  df  = go_results, 
+  df  = go_results[["variable_vs_stable"]][["df"]], 
   ct  = "HBE", 
   grp = "bottom 10%"
   ) %>%
@@ -327,7 +441,7 @@ p3 <- prep_go(
   )
 
 p4 <- prep_go(
-  df  = go_results, 
+  df  = go_results[["variable_vs_stable"]][["df"]], 
   ct  = "ALI", 
   grp = "bottom 10%"
   ) %>%
@@ -355,6 +469,42 @@ p4 <- prep_go(
 
 cleanup_objects()
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
