@@ -90,11 +90,11 @@ cleanup_objects()
 source("modules/fig-per-donor-threshold-metrics.R")
 ```
 
-```{r per-donor figs 1, fig.height=3.5, fig.width=8}
+```{r plot per-donor figs 1, fig.height=3.5, fig.width=8}
 temp_figs[[1]]
 ```
 
-```{r per-donors figs 2, fig.height=7, fig.width=5, out.width="50%", fig.show='hold'}
+```{r plot per-donors figs 2, fig.height=7, fig.width=5, out.width="50%", fig.show='hold'}
 temp_figs[[2]]
 temp_figs[[3]]
 cleanup_objects()
@@ -102,30 +102,30 @@ cleanup_objects()
 
 **Donors show more uniquely regulated genes than shared genes.** To understand individual variation, A549 cell replicates were averaged to represent one donor. Then overlaps between the A549 donor and all other primary donors were visualized as an UpSet plot. **(A)** Compared to genes regulated in only one donor (left side, first 11 bars), there are much fewer genes shared between donors (right side) *(do a manual count?)*. Splitting the visualization into **(B)** upregulated and **(C)** downregulated genes reveals that A549s have "normal" IL1B-upregulated signatures (middle-of-the-pack in terms of unique upreg genes), but abberant IL1B-downregulated signatures (has the most downregulated genes). Additionally, the 54 completely conserved genes are exclusively upregulated. This suggests that the IL1B-induced response is more core/conserved while the downregulated response is more context/individual-specific.
 
-```{r upset plots between donors, fig.height=8, fig.width=8}
+```{r plot upsets between donors, fig.height=8, fig.width=8}
 source("modules/fig-per-donor-upset.R")
 cleanup_objects()
 ```
 
 **Transcriptomic overlaps between each donor and A549 cells are small.** To assess similarities between each primary cell donor and the A549 mean, regulated genes were compared between each primary cell donor and A549 cells. **(A)** Only a small percentage (<15%) of each donor's regulation pool is recapitulated by A549 cells. This is less of a problem for IL1B-induced genes **(B)** and more of a problem for IL1B-downregulated genes **(C)**. J = Jaccard index, n = total number of genes.
 
-```{r pairwise venns vs a549, fig.width=8}
+```{r plot pairwise venns vs a549, fig.width=8}
 source("modules/fig-per-donor-pairwise-venns.R")
 cleanup_objects()
 ```
 
 Plotting each donor-to-A549 comparison, we see that overlaps tend to be bigger for upregulated genes and smaller for downregulated. T-test for $Jaccard_{\text{upreg}}$ vs $Jaccard_{\text{downreg}}$ (bottom right panel) returns P=0.0001169 (***).
 
-```{r pairwise venns summary, fig.height=4, fig.width=4}
+```{r plot pairwise venns summary, fig.height=4, fig.width=4}
 source("modules/fig-per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
 ## [[IN PROGRESS]] 2.2. Functional consequences of between-donor variability
 
-**TODO:** write up the explanation for this
+**Inflammatory programs are stably regulated across donors.** To understand which transcriptional programs are highly variable vs conserved across donors, the union of all IL1B-induced genes in each cell type were ranked by -SD across all donors. Thus, top ranking genes are consistently/stably regulated by IL1B in all donors, while bottom ranking genes are highly variable between donors. The two extremes of these ranking were then sampled for gene ontology enrichment analysis (GO_BP_DIRECT), before plotting the top 10 GO terms. Terms with less than 10 genes were excluded to prevent poorly defined programs from dominated the ranking. **(A)** In both ALI and HBE cells, donors show stable induction of inflammatory and apoptotic programs. **(B)** Both ALI and HBE cells are more variable in expression of metabolic programs. HBE cells showed some enrichment for inflammatory responses. However, none of these enrichments reached significance.
 
-```{r scale up, cache=T}
+```{r run gene ontology on variable vs stable genes, cache=T}
 
 go_results <- data.frame()
 
@@ -204,12 +204,13 @@ for(ct in c("A549", "ALI", "HBE")){
   go_results <- rbind(go_results, bottom_go_result)
   
 }
+
+cleanup_objects()
 ```
 
-```{r fig.width=5, fig.height=7, out.width='50%', fig.show='hold'}
+```{r plot variable vs stable GO, fig.width=5, fig.height=7, out.width='50%', fig.show='hold'}
 
-# holy fuck
-# clean this up please
+# function to prepare dataframes
 
 prep_go <- function(df, ct, grp) {
   
@@ -217,11 +218,15 @@ prep_go <- function(df, ct, grp) {
     filter(celltype == ct, group == grp, Count >= 10) %>%
     slice_max(FoldEnrichment, n = 10, with_ties = FALSE) %>%
     mutate(
-      Description = str_wrap(str_trunc(Description, 70), 35),
+      Description = str_wrap(str_trunc(Description, 60), 35),
       Description = factor(Description, levels = rev(Description))
     )
   
 }
+
+
+
+# function to generate the base plot
 
 base_plot <- function(
     df, 
@@ -242,8 +247,12 @@ base_plot <- function(
     scale_size(
       limits = size_limits, range = c(0, 10)
     ) +
-    scale_fill_gradient(
-      low = "white", high = "black",
+    # scale_fill_gradient(
+    #   low = "white", high = "black",
+    #   limits = fill_limits
+    # ) +
+    viridis::scale_fill_viridis(
+      option = "viridis",
       limits = fill_limits
     ) +
     scale_x_continuous(
@@ -259,8 +268,21 @@ base_plot <- function(
     theme_minimal()
 }
 
-p1 <- prep_go(go_results, "HBE", "top 10%") %>%
-  base_plot("HBE", x_limits = c(2.3, 4.0)) +
+
+# ==============================================================================
+
+
+# show top 10% most stable genes in HBEs
+
+p1 <- prep_go(
+  df  = go_results, 
+  ct  = "HBE", 
+  grp = "top 10%"
+  ) %>%
+  base_plot(
+    title    = "HBE", 
+    x_limits = c(2.3, 4.0)
+    ) +
   theme(
     axis.title.y = element_text(size = 20),
     panel.grid.minor = element_blank(),
@@ -268,33 +290,64 @@ p1 <- prep_go(go_results, "HBE", "top 10%") %>%
     axis.title.x = element_blank()
   )
 
-p2 <- prep_go(go_results, "ALI", "top 10%") %>%
-  base_plot("ALI", x_limits = c(2.3, 4.0)) +
+# show top 10% most stable genes in ALIs
+p2 <- prep_go(
+  df  = go_results, 
+  ct  = "ALI", 
+  grp = "top 10%") %>%
+  base_plot(
+    title    = "ALI", 
+    x_limits = c(2.3, 4.0)
+  ) +
   theme(
     axis.title.y = element_text(size = 20),
     panel.grid.minor = element_blank()
   )
+
+
+# ==============================================================================
+
+
+# show top 10% most variable genes in HBEs
+
+p3 <- prep_go(
+  df  = go_results, 
+  ct  = "HBE", 
+  grp = "bottom 10%"
+  ) %>%
+  base_plot(
+    title    = "HBE", 
+    x_limits = c(1, 1.9)
+    ) +
+  theme(
+    axis.title.y = element_text(size = 20),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank()
+  )
+
+p4 <- prep_go(
+  df  = go_results, 
+  ct  = "ALI", 
+  grp = "bottom 10%"
+  ) %>%
+  base_plot(
+    title    = "ALI", 
+    x_limits = c(1, 1.9)
+    ) +
+  theme(
+    axis.title.y = element_text(size = 20),
+    panel.grid.minor = element_blank()
+  )
+
+
+# ==============================================================================
+
+# assemble plot
 
 (p1 / p2) +
   plot_layout(guides = "collect") +
   plot_annotation(title = "A. most stably induced functions")
-
-
-p3 <- prep_go(go_results, "HBE", "bottom 10%") %>%
-  base_plot("HBE", x_limits = range(.$FoldEnrichment)) +
-  theme(
-    axis.title.y = element_text(size = 20),
-    panel.grid.minor = element_blank(),
-    axis.text.x = element_blank(),
-    axis.title.x = element_blank()
-  )
-
-p4 <- prep_go(go_results, "ALI", "bottom 10%") %>%
-  base_plot("ALI", x_limits = range(.$FoldEnrichment)) +
-  theme(
-    axis.title.y = element_text(size = 20),
-    panel.grid.minor = element_blank()
-  )
 
 (p3 / p4) +
   plot_layout(guides = "collect") +
@@ -304,30 +357,39 @@ cleanup_objects()
 ```
 
 
-## 2.?. IL1B responses seem to differ substantially between A549 and primary cells
 
-**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
-
-From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated.
-
-```{r old venns, out.width="33%", fig.show='hold', cache=T}
-source("modules/fig-old-venns.R")
-cleanup_objects()
-```
-
-
-
-
-
-## 2.?. A549s effectively capture what "could" happen across donors
-
-## 2.?. All celltypes share a small, conserved, "core" program
-
-These genes have ... functional signature, follow ... kinetic, are ... NFkappaB dependent (and should be the focus of future studies?)
 
 # **3. Old or orphaned code (mostly junk)**
 
 ```{text, echo=T}
+
+<!-- ## 2.?. IL1B responses seem to differ substantially between A549 and primary cells -->
+
+<!-- **(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**). -->
+
+<!-- From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated. -->
+
+<!-- ```{r old venns, out.width="33%", fig.show='hold', cache=T} -->
+<!-- source("modules/fig-old-venns.R") -->
+<!-- cleanup_objects() -->
+<!-- ``` -->
+
+
+
+
+
+<!-- ## 2.?. A549s effectively capture what "could" happen across donors -->
+
+<!-- ## 2.?. All celltypes share a small, conserved, "core" program -->
+
+<!-- These genes have ... functional signature, follow ... kinetic, are ... NFkappaB dependent (and should be the focus of future studies?) -->
+
+
+
+
+
+
+
 <!-- ## Understanding individual variation in gene expression -->
 
 <!-- ### Donors vs A549 -->
