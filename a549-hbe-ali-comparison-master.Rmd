@@ -73,6 +73,15 @@ multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 
 Given that IL1B-responsive gene expression patterns in A549s cells follow ... kinetics, carry ... functional signatures, we next want to compare the transcriptomic signatures of A549 cells and primary cells at 6 h (time of most regulation)... With the ultimate aim of understanding the extent to which A549 cells recapitulate donor responses to IL1B.
 
+## 2.?. Transcriptomic overlaps between A549 and primary cells
+
+**The A549 transcriptome overlaps poorly with the aggregate of all donors.** Venn diagrams were used to compare IL1B-responsive DEGs identified in A549 cell data and primary cell data (all donors pooled by cell type). Thresholds were set at log2fold >= 1 or -1 for induction amplitude and FDR < 0.05 for statistical significance. **(A)** Only ~17% of the IL1B-regulated transcriptome is shared with at least one aggregate primary cell type, increasing to ~33% for upregulated genes **(B)** and decreasing to ~4% for downregulated genes **(C)**. Trends remain stable when filtering with log2fold or FDR only **(D-I)**.
+
+```{r old venns, fig.height=4, fig.width=4, out.width="33%", fig.show='hold', cache=T}
+source("modules/fig-old-venns.R")
+cleanup_objects()
+```
+
 ## 2.1. Characterizing variability in IL1B response at the donor level
 
 A549 cells are derived from one individual, where each of the four replicates reflects one donor. Primary cells are derived from different individuals, where each replicate corresponds to a different donor. Thus, donor-specific regulatory events will be penalized in primary cell data and emphasized in A549 data. Before proceeding with differential expression analysis, it is important to assess IL1B-responsive transcription at the individual level.
@@ -578,40 +587,6 @@ I think this takes us forward! In the sense that A549s don't capture the entire 
 ```{r}
 cleanup_objects()
 ```
-
-
-
-
-
-## 2.?. IL1B responses seem to differ substantially between A549 and primary cells
-
-**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
-
-From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated.
-
-```{r old venns, fig.height=4, fig.width=4, out.width="33%", fig.show='hold', cache=T}
-source("modules/fig-old-venns.R")
-cleanup_objects()
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
