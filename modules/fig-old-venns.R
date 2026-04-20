@@ -16,32 +16,6 @@ reg <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-upreg <- dea %>%
-  filter(
-    treatment == "IL1B",
-    FDR <= 0.05,
-    log2fold >= 1
-  ) %>%
-  group_by(celltype) %>%
-  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
-  unnest(Gene) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
-  column_to_rownames("Gene")
-
-downreg <- dea %>%
-  filter(
-    treatment == "IL1B",
-    FDR <= 0.05,
-    log2fold <= -1
-  ) %>%
-  group_by(celltype) %>%
-  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
-  unnest(Gene) %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
-  column_to_rownames("Gene")
-
 reg_fold_only <- dea %>%
   filter(
     treatment == "IL1B",
@@ -66,14 +40,133 @@ reg_fdr_only <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
+
+
+
+upreg <- dea %>%
+  filter(
+    treatment == "IL1B",
+    FDR <= 0.05,
+    log2fold >= 1
+  ) %>%
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+upreg_fold_only <- dea %>%
+  filter(
+    treatment == "IL1B",
+    log2fold >= 1
+  ) %>%
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+upreg_fdr_only <- dea %>%
+  filter(
+    treatment == "IL1B",
+    log2fold > 0,
+    FDR <= 0.05
+  ) %>%
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+
+
+
+
+downreg <- dea %>%
+  filter(
+    treatment == "IL1B",
+    FDR <= 0.05,
+    log2fold <= -1
+  ) %>%
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+downreg_fold_only <- dea %>%
+  filter(
+    treatment == "IL1B",
+    log2fold <= -1
+  ) %>%
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+downreg_fdr_only <- dea %>%
+  filter(
+    treatment == "IL1B",
+    FDR <= 0.05,
+    log2fold < 0
+  ) %>%
+  group_by(celltype) %>%
+  summarize(Gene = list(unique(Gene)), .groups = "drop") %>%
+  unnest(Gene) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
+  column_to_rownames("Gene")
+
+
+
+
 # plot
 
 plot_euler(reg, plotTitle = "A. regulated") %>% print()
-plot_euler(upreg, plotTitle = "B. upregulated") %>% print()
-plot_euler(downreg, plotTitle = "C. downregulated") %>% print()
+plot_euler(reg_fold_only, plotTitle = "B. regulated, fold only") %>% print()
+plot_euler(reg_fdr_only, plotTitle = "C. regulated, FDR only") %>% print()
 
-plot_euler(reg_fold_only, plotTitle = "D. regulated, fold threshold only") %>% print()
-plot_euler(reg_fdr_only, plotTitle = "E. regulated, FDR threshold only") %>% print()
+
+
+plot_euler(upreg, plotTitle = "D. upregulated") %>% print()
+plot_euler(upreg_fold_only, plotTitle = "E. upregulated, fold only") %>% print()
+plot_euler(upreg_fdr_only, plotTitle = "F. upregulated, FDR only") %>% print()
+
+
+
+plot_euler(downreg, plotTitle = "G. downregulated") %>% print()
+plot_euler(downreg_fold_only, plotTitle = "H. downregulated, fold only") %>% print()
+plot_euler(downreg_fdr_only, plotTitle = "I. downregulated, FDR only") %>% print()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

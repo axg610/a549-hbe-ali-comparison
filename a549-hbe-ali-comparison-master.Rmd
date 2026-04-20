@@ -583,7 +583,16 @@ cleanup_objects()
 
 
 
+## 2.?. IL1B responses seem to differ substantially between A549 and primary cells
 
+**(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**).
+
+From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated.
+
+```{r old venns, fig.height=4, fig.width=4, out.width="33%", fig.show='hold', cache=T}
+source("modules/fig-old-venns.R")
+cleanup_objects()
+```
 
 
 
@@ -623,16 +632,7 @@ cleanup_objects()
 
 ```{text, echo=T}
 
-<!-- ## 2.?. IL1B responses seem to differ substantially between A549 and primary cells -->
 
-<!-- **(A)** For genes deemed "regulated" by DEA (log2fold <= -1 or >= 1 & FDR < 0.05), only ~17% of the IL1B-regulated transcriptome is shared with at least one primary celltype. This figure increases to ~33% for IL1B-induced genes **(B)** and decreases to ~4% for IL1B-downregulated genes **(C)**. Overlaps remain robust when calling regulated genes with fold criteria only (~23% shared, **D**), or FDR only (~19% shared, **E**). -->
-
-<!-- From a DEA perspective (all donors pooled together), IL1B-regulated transcriptomes in A549 and primary cells show low concordance. Start to see hints that the problem is worse for downregulated genes than it is for upregulated. -->
-
-<!-- ```{r old venns, out.width="33%", fig.show='hold', cache=T} -->
-<!-- source("modules/fig-old-venns.R") -->
-<!-- cleanup_objects() -->
-<!-- ``` -->
 
 
 
