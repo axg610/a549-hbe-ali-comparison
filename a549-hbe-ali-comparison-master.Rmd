@@ -90,7 +90,7 @@ A549 cells are derived from one individual, where each of the four replicates re
 
 
 ```{r calculate per-donor metrics, cache=T}
-source("modules/per-donor-set-theory.R")
+source("modules/per-donor-thresholding.R")
 source("modules/compute-heavy-heatmaps.R")
 cleanup_objects()
 ```
@@ -130,7 +130,151 @@ source("modules/fig-per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
-## 2.2. Functional consequences of between-donor variability
+## IN PROGRESS -- 2.2. A549 cells share more genes with donors than not
+
+```{r fig.height=3, fig.width=4}
+datasets_to_process <- list(
+  "regulated"     = per_donor_data[["overlaps"]],
+  "upregulated"   = per_donor_data[["overlaps_upreg"]],
+  "downregulated" = per_donor_data[["overlaps_downreg"]]
+)
+
+results <- data.frame()
+
+
+for(nm in names(datasets_to_process)){
+  
+  df <- datasets_to_process[[nm]]
+  
+  out <- df %>%
+    select(name, genes, n_genes) %>%
+    rowwise() %>%
+    mutate(
+      other_genes  = list(unique(unlist(df$genes[df$name != name]))),
+      shared_genes = list(intersect(genes, other_genes)),
+      unique_genes = list(setdiff(genes, other_genes)),
+      n_other      = length(other_genes),
+      n_shared     = length(shared_genes),
+      n_unique     = length(unique_genes)
+    ) %>%
+    ungroup() %>%
+    select(
+      name, 
+      genes, other_genes, shared_genes, unique_genes, 
+      contains("n_")
+      ) %>%
+    mutate(
+      regulation = nm
+    )
+    
+  results = rbind(results, out)
+}
+
+summary <- results %>%
+  select(name, regulation, contains("n_")) %>%
+  pivot_longer(
+    cols = contains("n_"),
+    names_to = "group",
+    values_to = "n"
+  ) %>%
+  mutate(
+    description = case_when(
+      group == "n_genes"  ~ "donor regulatory pool",
+      group == "n_unique" ~ "unique to donor",
+      group == "n_shared" ~ "shared w/ 1+ other(s)",
+      group == "n_other"  ~ "unique to others"
+    ),
+    group = factor(
+      group,
+      levels = c("n_unique", "n_shared", "n_genes", "n_other")
+    ),
+    regulation = factor(
+      regulation,
+      levels = c("regulated", "upregulated", "downregulated")
+    )
+  )
+```
+
+**More genes shared than unique**. For the A549 mean and all donors, genes were called regulated, upregulated, or downregulated if they met abs(log2fold) >= 1, log2fold >= 1, or log2fold <= -1 thresholds, respectively. Genes were then classified as unique to A549s, or shared between A549s and at least one primary cell donor. **(A)** For "regulated" genes, more are shared than unique (69% vs 31%). This does not factor in direction. **(B, C)** Similar trend for upregulated genes and less so for downregulated. Genes were only counted as shared if they regulated in the same direction.
+
+```{r fig.height=3, fig.width=4}
+ggplot(
+  summary %>% 
+    filter(
+      group %in% c("n_unique", "n_shared"),
+      name == "A549 mean"
+      ),
+  aes(x = group, y = n, label = n, fill = regulation)
+  ) +
+  facet_wrap(
+    ~regulation,
+    labeller = labeller(
+      regulation = c(
+        "regulated" = "A. regulated",
+        "upregulated" = "B. upregulated",
+        "downregulated" = "C.downregulated"
+      )
+    )) +
+  stat_summary(
+    geom = "col", fun = "mean",
+    color = "black",
+    width = 0.75
+  ) +
+  geom_text(
+    vjust = -0.5
+  ) +
+  scale_x_discrete(
+    labels = c(
+      "unique", 
+      "shared")
+  ) +
+  labs(x = NULL, y = "number of genes", title = "A549 vs donors") +
+  theme_minimal() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  scale_fill_manual(values = c("#00BA38", "#F8766D", "#619CFF")) +
+  guides(fill = "none")
+```
+
+This property is not unique to A549 cells. When taking each primary cell donor and comparing their unique genes vs those shared with at least one other donor (ALIs, HBEs, and A549), we get ~83% shared with 1+ other donor(s) and ~17% unique to that donor. Each point is one cell.
+
+```{r fig.height=3, fig.width=4}
+ggplot(
+  summary %>% 
+    filter(group %in% c("n_unique", "n_shared")),
+  aes(x = group, y = n, fill = regulation)
+  ) +
+  facet_wrap(
+    ~regulation,
+    labeller = labeller(
+      regulation = c(
+        "regulated" = "A. regulated",
+        "upregulated" = "B. upregulated",
+        "downregulated" = "C.downregulated"
+      )
+    )) +
+  stat_summary(
+    geom = "col", fun = "mean",
+    color = "black",
+    width = 0.75
+  ) +
+  geom_point() +
+  geom_line(
+    aes(group = name),
+    linetype = "dashed"
+  ) +
+  scale_x_discrete(
+    labels = c(
+      "unique", 
+      "shared")
+  ) +
+  labs(x = NULL, y = "number of genes", title = "all cells vs all others") +
+  theme_minimal() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  scale_fill_manual(values = c("#00BA38", "#F8766D", "#619CFF")) +
+  guides(fill = "none")
+```
+
+## 2.?. Functional consequences of between-donor variability
 
 **Inflammatory programs are stably regulated across donors.** To understand which transcriptional programs are highly variable vs conserved across donors, the union of all IL1B-induced genes in each cell type were ranked by -SD across all donors. Thus, top ranking genes (green) are consistently/stably regulated by IL1B in all donors, while bottom ranking genes (purple) are highly variable between donors.
 
@@ -479,114 +623,7 @@ p4 <- prep_go(
 cleanup_objects()
 ```
 
-## 2.3. Exploratory: how is donor variability handled by DEA?
 
-So, donors are variable in which peripheral programs they activate but generally agree in activating an inflammatory program. How is this variability handled by statistical testing?
-
-```{r}
-df <- dea %>%
-  filter(
-    treatment == "IL1B"
-  )
-
-sd <- data.frame()
-
-for(ct in c("ALI", "HBE", "A549")){
-  
-  query <- paste0(ct, "_IL1B_allInduced_sd")
-  topquery <- paste0(ct, "_IL1B_top10percentInduced")
-  bottomquery <- paste0(ct, "_IL1B_bottom10percentInduced")
-  
-  top_genes <- go_results[["variable_vs_stable"]][[topquery]]
-  bottom_genes <- go_results[["variable_vs_stable"]][[bottomquery]]
-  
-  temp <- go_results[["variable_vs_stable"]][[query]] %>%
-    as.data.frame(nm = "sd") %>%
-    rownames_to_column("Gene") %>%
-    mutate(celltype = ct) %>%
-    mutate(sd = -sd) %>%
-    mutate(group = case_when(
-      Gene %in% top_genes ~ "top 10% -SD (most stable)",
-      Gene %in% bottom_genes ~ "bottom 10% -SD (most variable)",
-      TRUE ~ "middle"
-    ))
-  
-  sd <- rbind(sd, temp)
-}
-
-
-ddf <- left_join(df, sd) %>%
-  filter(
-    !is.na(sd),
-    FDR != 1
-    )
-```
-
-First, take the A549 data as an example -- where each dot is a gene. We see that as the variability (SD) between replicates increases, the FDR trends towards 1. Somewhere along this trend, DEA calls the gene "not significantly regulated" (FDR < 0.05, at the red line). **This is intended behaviour** -- we have to create a statistical threshold somewhere.
-
-```{r fig.height=4, fig.width=8}
-ggplot(
-  ddf %>% filter(celltype %in% c("A549")),
-  aes(x = sd, y = FDR)
-) +
-  geom_point(
-    aes(shape = FDR <= 0.05),
-    alpha = 0.5
-  ) +
-  # geom_smooth(
-  #   method = "loess"
-  # ) +
-  geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") +
-  scale_y_log10(
-    breaks = c(1e-15, 1e-12, 1e-9, 1e-6, 1e-3, 1e0, 1e3)
-  ) +
-  coord_cartesian(
-    ylim = c(1e-15, 1)
-  ) +
-  facet_wrap(~celltype) +
-  theme_minimal() +
-  theme(aspect.ratio = 1) +
-  labs(x = "SD between replicates")
-```
-
-Now move these principles to the primary cell data. 
-
-We see that ALIs show a similar trend to A549s. The threshold is working, and DEA picks a group of DEGs. My previous cut by inter-donor SD also identifies a group of genes. These are two orthogonal analyses, but both agree that genes with general inflammatory signatures are consistently and "significantly" regulated. 
-
-However, slight problem with HBEs. We know that gene expression tends to be more variable here (see violin plots from section 2.1), and this causes the DEA algorithm to start penalizing genes. So the DEG pool that comes out is very small, but high confidence. A consideration: DEA is probably not the best way forward for primary cells, but especially for HBEs (I think we knew this). Instead we may have to lean more heavily towards between-donor variation instead of FDR. In addition to whatever effect size threshold we use (sleuth effect size, mean tpm fold, etc.)
-
-But overall: DEA preserves the low variability, inflammatory programs. Good. It misses the variable, donor-specific peripheral programs. Good in the sense that it cuts out noise and focuses on the "true" signal. Bad (?) that it fails to address individual differences (but do these even matter? Maybe they contribute to disease). And then there's a big grey zone in the middle (for now, this is the "middle 80%") that is probably a mix of the good and bad. Hopefully, A549 cells recapitulate the "stable" blue zone and most of the "mixed" green zone, and probably (hopefully? thankfully?) not any of the "variable" red zone. 
-
-```{r fig.height=4, fig.width=8}
-ggplot(
-  ddf %>% filter(celltype %in% c("ALI", "HBE")),
-  aes(x = sd, y = FDR)
-) +
-  geom_point(
-    aes(color = group, shape = FDR <= 0.05),
-    alpha = 0.5
-  ) +
-  # geom_smooth(
-  #   method = "loess"
-  # ) +
-  geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") +
-  scale_y_log10(
-    breaks = c(1e-15, 1e-12, 1e-9, 1e-6, 1e-3, 1e0, 1e3)
-  ) +
-  coord_cartesian(
-    ylim = c(1e-15, 1)
-  ) +
-  facet_wrap(~celltype) +
-  theme_minimal() +
-  theme(aspect.ratio = 1) +
-  labs(x = "SD between donors")
-```
-
-I think this takes us forward! In the sense that A549s don't capture the entire donor universe, but it doesn't actually have to -- and actually shouldn't, considering that the A549 cell line is one person. Instead, our cell lines effectively capture the part of the response that "matters" -- which is the stable, shared, inflammatory, IL1B response. The lack of overlap isn't actually something to be worried about, it's a reflection of individual-specific IL1B responses that operate peripherally to the core program but may contribute to disease susceptibility.
-
-```{r}
-cleanup_objects()
-```
 
 
 
@@ -607,7 +644,114 @@ cleanup_objects()
 
 ```{text, echo=T}
 
+<!-- ## 2.3. Exploratory: how is donor variability handled by DEA? -->
 
+<!-- So, donors are variable in which peripheral programs they activate but generally agree in activating an inflammatory program. How is this variability handled by statistical testing? -->
+
+<!-- ```{r} -->
+<!-- df <- dea %>% -->
+<!--   filter( -->
+<!--     treatment == "IL1B" -->
+<!--   ) -->
+
+<!-- sd <- data.frame() -->
+
+<!-- for(ct in c("ALI", "HBE", "A549")){ -->
+
+<!--   query <- paste0(ct, "_IL1B_allInduced_sd") -->
+<!--   topquery <- paste0(ct, "_IL1B_top10percentInduced") -->
+<!--   bottomquery <- paste0(ct, "_IL1B_bottom10percentInduced") -->
+
+<!--   top_genes <- go_results[["variable_vs_stable"]][[topquery]] -->
+<!--   bottom_genes <- go_results[["variable_vs_stable"]][[bottomquery]] -->
+
+<!--   temp <- go_results[["variable_vs_stable"]][[query]] %>% -->
+<!--     as.data.frame(nm = "sd") %>% -->
+<!--     rownames_to_column("Gene") %>% -->
+<!--     mutate(celltype = ct) %>% -->
+<!--     mutate(sd = -sd) %>% -->
+<!--     mutate(group = case_when( -->
+<!--       Gene %in% top_genes ~ "top 10% -SD (most stable)", -->
+<!--       Gene %in% bottom_genes ~ "bottom 10% -SD (most variable)", -->
+<!--       TRUE ~ "middle" -->
+<!--     )) -->
+
+<!--   sd <- rbind(sd, temp) -->
+<!-- } -->
+
+
+<!-- ddf <- left_join(df, sd) %>% -->
+<!--   filter( -->
+<!--     !is.na(sd), -->
+<!--     FDR != 1 -->
+<!--     ) -->
+<!-- ``` -->
+
+<!-- First, take the A549 data as an example -- where each dot is a gene. We see that as the variability (SD) between replicates increases, the FDR trends towards 1. Somewhere along this trend, DEA calls the gene "not significantly regulated" (FDR < 0.05, at the red line). **This is intended behaviour** -- we have to create a statistical threshold somewhere. -->
+
+<!-- ```{r fig.height=4, fig.width=8} -->
+<!-- ggplot( -->
+<!--   ddf %>% filter(celltype %in% c("A549")), -->
+<!--   aes(x = sd, y = FDR) -->
+<!-- ) + -->
+<!--   geom_point( -->
+<!--     aes(shape = FDR <= 0.05), -->
+<!--     alpha = 0.5 -->
+<!--   ) + -->
+<!--   # geom_smooth( -->
+<!--   #   method = "loess" -->
+<!--   # ) + -->
+<!--   geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + -->
+<!--   scale_y_log10( -->
+<!--     breaks = c(1e-15, 1e-12, 1e-9, 1e-6, 1e-3, 1e0, 1e3) -->
+<!--   ) + -->
+<!--   coord_cartesian( -->
+<!--     ylim = c(1e-15, 1) -->
+<!--   ) + -->
+<!--   facet_wrap(~celltype) + -->
+<!--   theme_minimal() + -->
+<!--   theme(aspect.ratio = 1) + -->
+<!--   labs(x = "SD between replicates") -->
+<!-- ``` -->
+
+<!-- Now move these principles to the primary cell data.  -->
+
+<!-- We see that ALIs show a similar trend to A549s. The threshold is working, and DEA picks a group of DEGs. My previous cut by inter-donor SD also identifies a group of genes. These are two orthogonal analyses, but both agree that genes with general inflammatory signatures are consistently and "significantly" regulated.  -->
+
+<!-- However, slight problem with HBEs. We know that gene expression tends to be more variable here (see violin plots from section 2.1), and this causes the DEA algorithm to start penalizing genes. So the DEG pool that comes out is very small, but high confidence. A consideration: DEA is probably not the best way forward for primary cells, but especially for HBEs (I think we knew this). Instead we may have to lean more heavily towards between-donor variation instead of FDR. In addition to whatever effect size threshold we use (sleuth effect size, mean tpm fold, etc.) -->
+
+<!-- But overall: DEA preserves the low variability, inflammatory programs. Good. It misses the variable, donor-specific peripheral programs. Good in the sense that it cuts out noise and focuses on the "true" signal. Bad (?) that it fails to address individual differences (but do these even matter? Maybe they contribute to disease). And then there's a big grey zone in the middle (for now, this is the "middle 80%") that is probably a mix of the good and bad. Hopefully, A549 cells recapitulate the "stable" blue zone and most of the "mixed" green zone, and probably (hopefully? thankfully?) not any of the "variable" red zone.  -->
+
+<!-- ```{r fig.height=4, fig.width=8} -->
+<!-- ggplot( -->
+<!--   ddf %>% filter(celltype %in% c("ALI", "HBE")), -->
+<!--   aes(x = sd, y = FDR) -->
+<!-- ) + -->
+<!--   geom_point( -->
+<!--     aes(color = group, shape = FDR <= 0.05), -->
+<!--     alpha = 0.5 -->
+<!--   ) + -->
+<!--   # geom_smooth( -->
+<!--   #   method = "loess" -->
+<!--   # ) + -->
+<!--   geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + -->
+<!--   scale_y_log10( -->
+<!--     breaks = c(1e-15, 1e-12, 1e-9, 1e-6, 1e-3, 1e0, 1e3) -->
+<!--   ) + -->
+<!--   coord_cartesian( -->
+<!--     ylim = c(1e-15, 1) -->
+<!--   ) + -->
+<!--   facet_wrap(~celltype) + -->
+<!--   theme_minimal() + -->
+<!--   theme(aspect.ratio = 1) + -->
+<!--   labs(x = "SD between donors") -->
+<!-- ``` -->
+
+<!-- I think this takes us forward! In the sense that A549s don't capture the entire donor universe, but it doesn't actually have to -- and actually shouldn't, considering that the A549 cell line is one person. Instead, our cell lines effectively capture the part of the response that "matters" -- which is the stable, shared, inflammatory, IL1B response. The lack of overlap isn't actually something to be worried about, it's a reflection of individual-specific IL1B responses that operate peripherally to the core program but may contribute to disease susceptibility. -->
+
+<!-- ```{r} -->
+<!-- cleanup_objects() -->
+<!-- ``` -->
 
 
 
