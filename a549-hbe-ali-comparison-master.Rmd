@@ -49,7 +49,7 @@ tpm <- read_tsv("data/raw/A549vsPrimary_tpm.txt")
 multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 ```
 
-```{r data previews, cache=T}
+```{r data previews}
 # knitr::kable(
 #   dea %>% filter(Gene == "NFKBIA"),
 #   caption = "Example univariate DEA data (~treatment)", 
@@ -71,9 +71,11 @@ multivar <- read_tsv("data/raw/A549vsPrimary_multivariateDEA.txt")
 
 # **2. Story notes**
 
+**To do:** check sequencing depth in A549, ALI, and HBE runs
+
 Given that IL1B-responsive gene expression patterns in A549s cells follow ... kinetics, carry ... functional signatures, we next want to compare the transcriptomic signatures of A549 cells and primary cells at 6 h (time of most regulation)... With the ultimate aim of understanding the extent to which A549 cells recapitulate donor responses to IL1B.
 
-## 2.?. Transcriptomic overlaps between A549 and primary cells
+## 2.1. Small overlap between A549 cells and donors
 
 **The A549 transcriptome overlaps poorly with the aggregate of all donors.** Venn diagrams were used to compare IL1B-responsive DEGs identified in A549 cell data and primary cell data (all donors pooled by cell type). Thresholds were set at log2fold >= 1 or -1 for induction amplitude and FDR < 0.05 for statistical significance. **(A)** Only ~17% of the IL1B-regulated transcriptome is shared with at least one aggregate primary cell type, increasing to ~33% for upregulated genes **(B)** and decreasing to ~4% for downregulated genes **(C)**. Trends remain stable when filtering with log2fold or FDR only **(D-I)**.
 
@@ -82,12 +84,9 @@ source("modules/fig-old-venns.R")
 cleanup_objects()
 ```
 
-## 2.1. Characterizing variability in IL1B response at the donor level
+## 2.2. A549 cell replicates are relatively stable
 
-A549 cells are derived from one individual, where each of the four replicates reflects one donor. Primary cells are derived from different individuals, where each replicate corresponds to a different donor. Thus, donor-specific regulatory events will be penalized in primary cell data and emphasized in A549 data. Before proceeding with differential expression analysis, it is important to assess IL1B-responsive transcription at the individual level.
-
-**Primary cell donors are more variable than A549 cell replicates.** Counts and variability for regulated genes (abs(log2fold) > 1)  were assessed across sequencing replicates. **(A)** A549 cells have more or less the same number of "regulated" genes across replicates, and **(B)** lower variability in log2fold across replicates (*do stats on this?*). **(C)** A549 replicates are more concordant in which genes they regulate while individuals donors are more variable. **(D)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, A549 cells tend to show consistent responses across replicates while primary cells show blocks of up- or down-regulation on a per-donor basis.
-
+*I feel like this section is here to justify collapsing A549 samples into one "mean." Don't really have to show it, but it's here in case reviewers ask. If this ever gets shown, reviewers might ask us to do the same thing in reps of primary cell donors.*
 
 ```{r calculate per-donor metrics, cache=T}
 source("modules/per-donor-thresholding.R")
@@ -95,18 +94,261 @@ source("modules/compute-heavy-heatmaps.R")
 cleanup_objects()
 ```
 
-```{r generate per-donor figs, cache=T, include=F}
-source("modules/fig-per-donor-threshold-metrics.R")
-```
+**A549 replicates are less variable than primary cell donors.** To understand variability within A549, ALI, and HBE samples, IL1B-regulated genes (abs(log2fold) >= 1) were identified in each replicate or donor. **(A)** A549 replicates show greater overlap in regulated genes than primary cells. **(B)** The union of all IL1B-regulated genes (14621) were visualized as a heatmap. Compared to primary cell donors, A549 replicates appear more coherent. Note "splotches" of gene expression unique to one primary cell donor, which do not appear in A549 cells. Accompanying basal tpm heatmap suggests these variable genes have lower baseline expression. 
 
-```{r plot per-donor figs 1, fig.height=3.5, fig.width=8}
-temp_figs[[1]]
-```
+**Variability between A549 replicates are related to basal expression.** **(C)** When ordering A549-regulated genes by SD across reps (stable on top, variable on bottom), variability appears inversely related to basal expression. **(D, E)** A549 genes were ordered by SD and divided into 10 bins. Bins with higher SD tend to have lower basal expression.
 
-```{r plot per-donors figs 2, fig.height=7, fig.width=5, out.width="50%", fig.show='hold'}
-temp_figs[[2]]
-temp_figs[[3]]
+
+```{r venns and heatmaps of reps, fig.height=7, fig.width=6, out.width="50%", fig.show='hold'}
+
+source("modules/compute-heavy-heatmaps.R")
+
+# === gene overlap structure between donors ====================================
+
+euler1 <- per_donor_data[["logical_matrix_A549separate"]] %>%
+  select(contains("A549")) %>%
+  filter(!if_all(everything(), ~ .x == 0)) %>%
+  plot_euler(
+    returnAsFunction = T, 
+    fillColors = rep("white", 10), showLabels = F, 
+    plotTitle = "A549 replicates",
+    aspectRatio = 0.5
+    )
+
+euler2 <- per_donor_data[["logical_matrix_A549separate"]] %>%
+  select(contains("ALI")) %>%
+  filter(!if_all(everything(), ~ .x == 0)) %>%
+  plot_euler(
+    returnAsFunction = T, 
+    fillColors = rep("#D9D9D9", 10), 
+    showLabels = F, 
+    plotTitle = "ALI donors",
+    aspectRatio = 0.5
+    )
+
+euler3 <- per_donor_data[["logical_matrix_A549separate"]] %>%
+  select(contains("HBE")) %>%
+  filter(!if_all(everything(), ~ .x == 0)) %>%
+  plot_euler(
+    returnAsFunction = T, 
+    fillColors = rep("#A6CEE3", 10), 
+    showLabels = F, 
+    plotTitle = "HBE donors",
+    aspectRatio = 0.5
+    )
+
+wrap_elements(euler1()) /
+  wrap_elements(euler2()) / 
+  wrap_elements(euler3()) +
+  plot_annotation(title = "A. overlap structure across cell type replicates")
+
+# === heatmap of union of all 14621 genes regulated in any donor ===============
+
+colsplits = c(
+  rep("A549", 4),
+  rep("ALI", 5),
+  rep("HBE", 5)
+)
+
+
+colors = generic_l2f_heatmap_colors(
+  clustered_matrices$all_donors_union
+  )
+
+hm1 <- Heatmap(
+  clustered_matrices$all_donors_union,
+  cluster_columns = F,
+  cluster_rows = F,
+  use_raster = T,
+  show_row_names = F,
+  column_split = colsplits,
+  border = "black",
+  col = colors,
+  name = "log2fold IL1B",
+  width = unit(2.25, "inch")
+)
+
+colors = generic_l2f_heatmap_colors(
+  clustered_matrices$all_donors_union_comparativeTPMs,
+  colorscale = viridis::viridis(5)
+  )
+
+hm2 <- Heatmap(
+  clustered_matrices$all_donors_union_comparativeTPMs,
+  cluster_columns = F,
+  cluster_rows = F,
+  use_raster = T,
+  show_row_names = F,
+  column_split = colsplits,
+  border = "black",
+  col = colors,
+  name = "log2tpm at NS",
+  width = unit(2.25, "inch")
+)
+
+draw(
+  hm1 + hm2,
+  column_title = "B. Genes regulated in 1+ samples"
+)
+
+
+# === order A549-regulated genes by standard deviation and check NS tpm ========
+  
+genes <- per_donor_data$thresholded_log2fold_A549separate %>%
+  filter(
+    celltype == "A549",
+    meets_threshold
+    ) %>%
+  pull(Gene)
+
+order <- per_donor_data$spread_A549separate %>%
+  filter(
+    Gene %in% genes,
+    celltype == "A549"
+  ) %>%
+  arrange(sd) %>%
+  pull(Gene)
+
+l2f_mat <- per_donor_data$thresholded_log2fold_A549separate %>%
+  filter(
+    Gene %in% genes,
+    celltype == "A549"
+  ) %>%
+  mutate(name = paste(celltype, rep)) %>%
+  select(Gene, name, log2fold) %>%
+  pivot_wider(names_from = "name", values_from = "log2fold") %>%
+  column_to_rownames("Gene") %>%
+  as.matrix() %>%
+  .[order, ]
+
+l2f_colors = generic_l2f_heatmap_colors(
+  l2f_mat
+  )
+
+tpm_mat <- tpm %>%
+  filter(
+    Gene %in% genes,
+    treatment == "NS",
+    celltype == "A549"
+  ) %>%
+  mutate(name = paste(celltype, rep)) %>%
+  select(Gene, name, log2tpm) %>%
+  pivot_wider(names_from = "name", values_from = "log2tpm") %>%
+  column_to_rownames("Gene") %>%
+  as.matrix() %>%
+  .[order, ]
+
+tpm_colors = generic_l2f_heatmap_colors(
+  tpm_mat,
+  viridis::viridis(5)
+  )
+
+hm1 <- Heatmap(
+  l2f_mat,
+  cluster_columns = F,
+  cluster_rows = F,
+  use_raster = T,
+  show_row_names = F,
+  # column_split = colsplits,
+  border = "black",
+  col = l2f_colors,
+  name = "log2fold IL1B",
+  width = unit(0.75, "inch"),
+  height = unit(4, "inch")
+)
+
+hm2 <- Heatmap(
+  tpm_mat,
+  cluster_columns = F,
+  cluster_rows = F,
+  use_raster = T,
+  show_row_names = F,
+  # column_split = colsplits,
+  border = "black",
+  col = tpm_colors,
+  name = "log2tpm at NS",
+  width = unit(0.75, "inch"),
+  height = unit(4, "inch")
+)
+
+draw(
+  hm1 + hm2,
+  column_title = "C. A549 regulated genes ordered by SD"
+)
+
+# === sd vs basal tpm ==========================================================
+
+genes <- per_donor_data$thresholded_log2fold_A549separate %>%
+  filter(
+    celltype == "A549",
+    meets_threshold
+    ) %>%
+  pull(Gene)
+
+tpm_df <- tpm %>%
+  filter(
+    celltype == "A549",
+    treatment == "NS",
+    Gene %in% genes
+  ) %>%
+  group_by(Gene, log2tpm) %>%
+  summarize(log2tpm = mean(log2tpm), .groups = "drop") %>%
+  filter(round(log2tpm, 3) != -3.322)
+
+sd_df <- per_donor_data$spread_A549separate %>%
+  filter(
+    celltype == "A549",
+    Gene %in% genes
+  )
+
+summary_df <- left_join(tpm_df, sd_df)
+
+p1 <- ggplot(
+  summary_df,
+  aes(x = ntile(sd, 10), y = sd)
+) +
+  geom_boxplot(
+    aes(group = ntile(sd, 10)),
+    outliers = F
+  ) +
+  theme_minimal() + 
+  theme(aspect.ratio = 0.5) +
+  labs(
+    x = "bin",
+    y = expression("SD of " * log[2] * "fold across reps"),
+    title = "D. binning A549 IL1B-induced genes by variability"
+  ) +
+  scale_x_continuous(breaks = seq(1, 10))
+
+p2 <- ggplot(
+  summary_df,
+  aes(x = ntile(sd, 10), y = log2tpm)
+) +
+  geom_boxplot(
+    aes(group = ntile(sd, 10)),
+    outliers = F
+  ) +
+  theme_minimal() + 
+  theme(aspect.ratio = 0.5) +
+  labs(
+    x = "bin",
+    y = expression("basal expression (" * log[2] * "tpm at NS)"),
+    title = "E. highly variable genes are lowly expressed"
+  )
+
+wrap_plots(p1 / p2)
+
 cleanup_objects()
+```
+
+
+## 2.3. Donors are highly variable
+
+**Primary cell donors are more variable than A549 cell replicates.** Counts and variability for regulated genes (abs(log2fold) > 1)  were assessed across sequencing replicates. **(A)** A549 cells have more or less the same number of "regulated" genes across replicates, and **(B)** lower variability in log2fold across replicates (*do stats on this?*). **(C)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, primary cells show blocks of up- or down-regulation unique to each donor.
+
+```{r plot per-donor figs, cache=T, fig.height=3.5, fig.width=8}
+source("modules/compute-heavy-heatmaps.R")
+source("modules/fig-per-donor-threshold-metrics.R")
 ```
 
 **Donors show more uniquely regulated genes than shared genes.** To understand individual variation, A549 cell replicates were averaged to represent one donor. Then overlaps between the A549 donor and all other primary donors were visualized as an UpSet plot. **(A)** Compared to genes regulated in only one donor (left side, first 11 bars), there are much fewer genes shared between donors (right side) *(do a manual count?)*. Splitting the visualization into **(B)** upregulated and **(C)** downregulated genes reveals that A549s have "normal" IL1B-upregulated signatures (middle-of-the-pack in terms of unique upreg genes), but abberant IL1B-downregulated signatures (has the most downregulated genes). Additionally, the 54 completely conserved genes are exclusively upregulated. This suggests that the IL1B-induced response is more core/conserved while the downregulated response is more context/individual-specific.
@@ -130,7 +372,7 @@ source("modules/fig-per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
-## IN PROGRESS -- 2.2. A549 cells share more genes with donors than not
+## 2.4. Majority of A549-induced genes are shared with donors
 
 ```{r fig.height=3, fig.width=4}
 datasets_to_process <- list(
@@ -274,7 +516,7 @@ ggplot(
   guides(fill = "none")
 ```
 
-## 2.?. Functional consequences of between-donor variability
+## 2.5. Stable induction of inflammatory responses between donors
 
 **Inflammatory programs are stably regulated across donors.** To understand which transcriptional programs are highly variable vs conserved across donors, the union of all IL1B-induced genes in each cell type were ranked by -SD across all donors. Thus, top ranking genes (green) are consistently/stably regulated by IL1B in all donors, while bottom ranking genes (purple) are highly variable between donors.
 
@@ -622,21 +864,6 @@ p4 <- prep_go(
 
 cleanup_objects()
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

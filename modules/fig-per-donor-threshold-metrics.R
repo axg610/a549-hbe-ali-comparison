@@ -43,104 +43,40 @@ p2 <- ggplot(
 #   scale_fill_manual(values=  c("#FFFFFF", "#D9D9D9", "#A6CEE3")) +
 #   labs(y = NULL, x = "% reps with |log2fold| > 1", title = "C. 'agreement'")
 
-plots <- wrap_plots(
+print(
+  wrap_plots(
     p1, 
     p2, 
     # p3, 
     nrow = 1)
-
-
-# === gene overlap structure between donors ===
-
-euler1 <- per_donor_data[["logical_matrix_A549separate"]] %>%
-  select(contains("A549")) %>%
-  filter(!if_all(everything(), ~ .x == 0)) %>%
-  plot_euler(
-    returnAsFunction = T, 
-    fillColors = rep("white", 10), showLabels = F, 
-    plotTitle = "A549 replicates",
-    aspectRatio = 0.5
-    )
-
-euler2 <- per_donor_data[["logical_matrix_A549separate"]] %>%
-  select(contains("ALI")) %>%
-  filter(!if_all(everything(), ~ .x == 0)) %>%
-  plot_euler(
-    returnAsFunction = T, 
-    fillColors = rep("#D9D9D9", 10), 
-    showLabels = F, 
-    plotTitle = "ALI donors",
-    aspectRatio = 0.5
-    )
-
-euler3 <- per_donor_data[["logical_matrix_A549separate"]] %>%
-  select(contains("HBE")) %>%
-  filter(!if_all(everything(), ~ .x == 0)) %>%
-  plot_euler(
-    returnAsFunction = T, 
-    fillColors = rep("#A6CEE3", 10), 
-    showLabels = F, 
-    plotTitle = "HBE donors",
-    aspectRatio = 0.5
-    )
-
-euler <- wrap_elements(euler1()) / wrap_elements(euler2()) / wrap_elements(euler3()) +
-    plot_annotation(title = "C. overlap structure across celltypes")
-
+)
 
 # === heatmap of union of all 14621 genes regulated in any donor ===
 
-
 colsplits = c(
-  rep("A549", 4),
+  rep("A549", 1),
   rep("ALI", 5),
   rep("HBE", 5)
 )
 
-colors = circlize::colorRamp2(
-  c(
-    seq(
-      quantile(clustered_matrices$all_donors_union, 0.02),
-      -0.05,
-      length = 75
-    ),
-    seq(
-      -0.49,
-      0.49,
-      length = 50
-    ),
-    seq(
-      0.5,
-      quantile(clustered_matrices$all_donors_union, 0.98),
-      length = 75
-    )
-  ),
-  colorRampPalette(c("steelblue4", "steelblue2" , "white", "firebrick2", "firebrick4"))(200)
-)
+colors = generic_l2f_heatmap_colors(clustered_matrices$all_donors_union_A5mean)
 
-
-hm <- draw(
+draw(
   Heatmap(
-    clustered_matrices$all_donors_union,
+    clustered_matrices$all_donors_union_A5mean,
     cluster_columns = F,
     cluster_rows = F,
-    clustering_method_rows = "ward.D2",
     use_raster = T,
     show_row_names = F,
+    show_column_names = F,
     column_split = colsplits,
     border = "black",
     col = colors,
-    name = "log2fold"),
-  column_title = "D. union of all IL1B-regulated genes"
+    name = "log2fold",
+    width = unit(2.25, "inch")
+  ),
+  column_title = "C. all IL1B-regulated genes across cell type replicates"
 )
-
-temp_figs <- list(
-  plots,
-  euler,
-  hm
-)
-
-
 
 
 

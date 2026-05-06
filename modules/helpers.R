@@ -117,7 +117,11 @@ plot_euler <- function(
   
 }
 
-generic_l2f_heatmap_colors <- function(mat){
+generic_l2f_heatmap_colors <- function(
+    mat,
+    colorscale = c(
+      "steelblue4", "steelblue2" , "white", "firebrick2", "firebrick4")
+    ){
   
   # return a pretty log2fold heatmap color palette given a matrix
   
@@ -140,10 +144,7 @@ generic_l2f_heatmap_colors <- function(mat){
       )
     ),
     colorRampPalette(
-      c(
-        "steelblue4", "steelblue2" , 
-        "white", 
-        "firebrick2", "firebrick4")
+      colorscale
       )(200)
   )
   
