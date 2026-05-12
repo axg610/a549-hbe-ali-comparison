@@ -11,6 +11,9 @@ module load kallisto/0.46.1
 MULTIQC="/home/alex.gao1/tools/multiqc_latest.sif"
 #v1.19
 
+export PATH=/home/alex.gao1/tools/FastQC:$PATH
+# FastQC v0.12.1
+
 mkdir -p /work/newton_lab/ag_analysis/A549_vs_primary
 cd /work/newton_lab/ag_analysis/A549_vs_primary
 ```
@@ -23,6 +26,66 @@ scp ./data//meta_ali_il1b_bud.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_
 scp ./data//meta_hbe_il1b_dex.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary
 
 dos2unix ./*.txt
+```
+
+### run QC on raw fastq files
+
+```bash
+mkdir -p fastqc
+cd fastqc
+
+# build list of fastq files to process
+awk '
+FNR==1 {next}
+{
+  base=$6
+  for(i=7;i<=10;i++){
+    if($i ~ /\.fastq\.gz$/){
+      print base $i
+    }
+  }
+}
+' ../meta_*.txt | sort -u > fastq_files.txt
+
+# prepare slurm script
+cat <<'EOF' > run_fastqc_array.slurm
+#!/bin/bash
+
+#SBATCH --job-name=fastqc
+#SBATCH --output=/work/newton_lab/ag_analysis/A549_vs_primary/fastqc/logs/%A_%a.out
+#SBATCH --error=/work/newton_lab/ag_analysis/A549_vs_primary/fastqc/logs/%A_%a.err
+#SBATCH --time=04:00:00
+#SBATCH --mem=4G
+#SBATCH --cpus-per-task=2
+#SBATCH --nodes=1
+
+export PATH=/home/alex.gao1/tools/FastQC:$PATH
+# FastQC v0.12.1
+
+cd /work/newton_lab/ag_analysis/A549_vs_primary/fastqc/
+
+FASTQ_LIST=fastq_files.txt
+OUTDIR=fastqc_results
+
+mkdir -p "${OUTDIR}"
+mkdir -p logs
+
+# get this task's FASTQ
+FASTQ=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "${FASTQ_LIST}")
+
+echo "Processing ${FASTQ}"
+
+fastqc -t ${SLURM_CPUS_PER_TASK} -o "${OUTDIR}" "${FASTQ}"
+
+EOF
+
+# submit fastqc runs
+N=$(wc -l < fastq_files.txt)
+sbatch --array=1-${N}%40 run_fastqc_array.slurm
+
+# run multiqc
+
+apptainer exec --bind /work:/work "$MULTIQC" multiqc ../fastqc/fastqc_results -o multiqc
 ```
 
 
@@ -124,9 +187,9 @@ awk -F'\t' 'NR>1 {
 ```
 
 
-### run MultiQC
+### run QC on kallisto output
 ```bash
-apptainer exec --bind /work:/work "$MULTIQC" multiqc kallisto/logs/ -o multiqc
+apptainer exec --bind /work:/work "$MULTIQC" multiqc kallisto/logs/ -o kallisto_multiqc
 ```
 
 ```bash (powershell)
