@@ -1,4 +1,6 @@
 
+# need to start looping if this gets bigger. a lot of repetition
+
 # === initialize per donor data object =========================================
 per_donor_data <- list()
 
@@ -26,13 +28,33 @@ per_donor_data[["thresholded_log2fold_A549separate"]] <- per_donor_data[["tpm_by
   summarize(log2fold = mean(log2fold), .groups = "drop") %>%
   mutate(meets_threshold = abs(log2fold) >= 1)
 
-# === basic counts and spread on a per-donor basis =============================
+# === basic counts on a per-donor basis ========================================
 
 # counts: how many threshold-meeting genes in each donor?
 
      # a549 meaned
 counts <- per_donor_data[["thresholded_log2fold"]] %>%
   filter(meets_threshold) %>%
+  group_by(name, rep, celltype) %>%
+  summarize(n = length(unique(Gene)), .groups = "drop") %>%
+  arrange(name) %>%
+  mutate(name = factor(name, levels = unique(name)))
+
+     # a549 meaned, upreg only
+counts_upreg <- per_donor_data[["thresholded_log2fold"]] %>%
+  filter(
+    meets_threshold,
+    log2fold >= 1) %>%
+  group_by(name, rep, celltype) %>%
+  summarize(n = length(unique(Gene)), .groups = "drop") %>%
+  arrange(name) %>%
+  mutate(name = factor(name, levels = unique(name)))
+
+     # a549 meaned, downreg only
+counts_downreg <- per_donor_data[["thresholded_log2fold"]] %>%
+  filter(
+    meets_threshold,
+    log2fold <= -1) %>%
   group_by(name, rep, celltype) %>%
   summarize(n = length(unique(Gene)), .groups = "drop") %>%
   arrange(name) %>%
@@ -46,12 +68,58 @@ counts_A549separate <- per_donor_data[["thresholded_log2fold_A549separate"]] %>%
   arrange(name) %>%
   mutate(name = factor(name, levels = unique(name)))
 
+# === basic spreads on a per-donor basis =======================================
+
 # spread: sd and %meetingThreshold for each gene, in each celltype
 
      # a549 meaned
 spread <- per_donor_data[["thresholded_log2fold"]] %>%
   group_by(Gene, celltype) %>%
   filter(any(meets_threshold)) %>%
+  ungroup() %>%
+  select(-log2fold) %>%
+  distinct() %>%
+  left_join(
+    per_donor_data[["tpm_by_donor"]]
+  ) %>%
+  group_by(Gene, celltype) %>%
+  summarize(
+    sd = sd(log2fold),
+    n_meets_threshold = length(Gene[abs(log2fold) >= 1]),
+    nreps = length(Gene),
+    percent_meets_threshold = 100 * n_meets_threshold / nreps,
+    .groups = "drop"
+  )
+
+     # a549 meaned, upreg
+spread_upreg <- per_donor_data[["thresholded_log2fold"]] %>%
+  group_by(Gene, celltype) %>%
+  filter(
+    any(meets_threshold),
+    log2fold >= 1
+    ) %>%
+  ungroup() %>%
+  select(-log2fold) %>%
+  distinct() %>%
+  left_join(
+    per_donor_data[["tpm_by_donor"]]
+  ) %>%
+  group_by(Gene, celltype) %>%
+  summarize(
+    sd = sd(log2fold),
+    n_meets_threshold = length(Gene[abs(log2fold) >= 1]),
+    nreps = length(Gene),
+    percent_meets_threshold = 100 * n_meets_threshold / nreps,
+    .groups = "drop"
+  )
+
+     # a549 meaned
+spread_downreg <- per_donor_data[["thresholded_log2fold"]] %>%
+  group_by(Gene, celltype) %>%
+  filter(
+    any(meets_threshold),
+    log2fold <= -1
+    ) %>%
   ungroup() %>%
   select(-log2fold) %>%
   distinct() %>%
@@ -256,10 +324,16 @@ a5_exclude_downreg <- logical_matrix_downreg %>%
   filter(!if_all(everything(), ~ .x == 0))
 
 
-# === write calculations to main per-donor data object ===
+# === write calculations to main per-donor data object =========================
 
 per_donor_data[["counts"]] <- counts
+per_donor_data[["counts_upreg"]] <- counts_upreg
+per_donor_data[["counts_downreg"]] <- counts_downreg
+
 per_donor_data[["spread"]] <- spread
+per_donor_data[["spread_upreg"]] <- spread_upreg
+per_donor_data[["spread_downreg"]] <- spread_downreg
+
 per_donor_data[["counts_A549separate"]] <- counts_A549separate
 per_donor_data[["spread_A549separate"]] <- spread_A549separate
 

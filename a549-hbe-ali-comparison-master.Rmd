@@ -124,6 +124,8 @@ genes_of_interest <- dea %>%
   deframe()
 
 # make matrices for each venn lobe
+# technically this should be in modules/compute_heavy_matrices.R
+# but i don't think worth movings
 
 matrices <- list()
 
@@ -206,7 +208,9 @@ for(grp in names(matrices)){
 }
 
 # write out heatmaps to deploy on RNAseq explorer
-saveRDS(heatmaps, "data/rds/il1b_reg_genes_heatmap.rds")
+
+# saveRDS(heatmaps, "data/rds/il1b_reg_genes_heatmap.rds")
+saveRDS(matrices, "data/rds/il1b_reg_venn_matrices.rds")
 
 # draw heatmaps for the knit
 
@@ -479,11 +483,12 @@ cleanup_objects()
 
 ## 2.3. Donors are highly variable
 
-**Primary cell donors are more variable than A549 cell replicates.** Counts and variability for regulated genes (abs(log2fold) > 1)  were assessed across sequencing replicates. **(A)** A549 cells have more or less the same number of "regulated" genes across replicates, and **(B)** lower variability in log2fold across replicates (*do stats on this?*). **(C)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, primary cells show blocks of up- or down-regulation unique to each donor.
+**Primary cell donors are more variable than A549 cell replicates.** Counts and variability for regulated genes (abs(log2fold) > 1)  were assessed across donors. **(A-C)** A549 and primary cells have similar numbers of "regulated" genes, with slightly less upregulation in A549s. **(D)** For "regulated" genes in general, there is more variability in log2fold across replicates of A549s than pooled primary cell donors. **(E-F)** This relationship reverses when restricting the analysis to genes regulating in the same direction, suggesting that between-donor variability comes from failure to "agree" on the direction in which many genes regulate. **(G)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, primary cells show blocks of up- or down-regulation unique to each donor.
 
-```{r plot per-donor figs, cache=T, fig.height=3.5, fig.width=8}
+```{r plot per-donor figs, fig.height=5, fig.width=9}
 source("modules/compute-heavy-heatmaps.R")
 source("modules/fig-per-donor-threshold-metrics.R")
+cleanup_objects()
 ```
 
 **Donors show more uniquely regulated genes than shared genes.** To understand individual variation, A549 cell replicates were averaged to represent one donor. Then overlaps between the A549 donor and all other primary donors were visualized as an UpSet plot. **(A)** Compared to genes regulated in only one donor (left side, first 11 bars), there are much fewer genes shared between donors (right side) *(do a manual count?)*. Splitting the visualization into **(B)** upregulated and **(C)** downregulated genes reveals that A549s have "normal" IL1B-upregulated signatures (middle-of-the-pack in terms of unique upreg genes), but abberant IL1B-downregulated signatures (has the most downregulated genes). Additionally, the 54 completely conserved genes are exclusively upregulated. This suggests that the IL1B-induced response is more core/conserved while the downregulated response is more context/individual-specific.
