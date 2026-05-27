@@ -14,16 +14,16 @@ MULTIQC="/home/alex.gao1/tools/multiqc_latest.sif"
 export PATH=/home/alex.gao1/tools/FastQC:$PATH
 # FastQC v0.12.1
 
-mkdir -p /work/newton_lab/ag_analysis/A549_vs_primary
-cd /work/newton_lab/ag_analysis/A549_vs_primary
+mkdir -p /work/newton_lab/ag_analysis/a549-hbe-ali-comparison
+cd /work/newton_lab/ag_analysis/a549-hbe-ali-comparison
 ```
 
 
 ### import metafiles
 ```bash
-scp ./data/meta_a549_il1b_bud.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary
-scp ./data//meta_ali_il1b_bud.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary
-scp ./data//meta_hbe_il1b_dex.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary
+scp ./data/meta_a549_il1b_bud.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/a549-hbe-ali-comparison
+scp ./data//meta_ali_il1b_bud.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/a549-hbe-ali-comparison
+scp ./data//meta_hbe_il1b_dex.txt alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/a549-hbe-ali-comparison
 
 dos2unix ./*.txt
 ```
@@ -52,8 +52,8 @@ cat <<'EOF' > run_fastqc_array.slurm
 #!/bin/bash
 
 #SBATCH --job-name=fastqc
-#SBATCH --output=/work/newton_lab/ag_analysis/A549_vs_primary/fastqc/logs/%A_%a.out
-#SBATCH --error=/work/newton_lab/ag_analysis/A549_vs_primary/fastqc/logs/%A_%a.err
+#SBATCH --output=/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/fastqc/logs/%A_%a.out
+#SBATCH --error=/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/fastqc/logs/%A_%a.err
 #SBATCH --time=04:00:00
 #SBATCH --mem=4G
 #SBATCH --cpus-per-task=2
@@ -62,7 +62,7 @@ cat <<'EOF' > run_fastqc_array.slurm
 export PATH=/home/alex.gao1/tools/FastQC:$PATH
 # FastQC v0.12.1
 
-cd /work/newton_lab/ag_analysis/A549_vs_primary/fastqc/
+cd /work/newton_lab/ag_analysis/a549-hbe-ali-comparison/fastqc/
 
 FASTQ_LIST=fastq_files.txt
 OUTDIR=fastqc_results
@@ -100,15 +100,15 @@ cat <<'EOF' > kallisto/run_kallisto_singleEnd.slurm
 #!/bin/bash
 
 #SBATCH --job-name=kallisto
-#SBATCH --output=/work/newton_lab/ag_analysis/A549_vs_primary/kallisto/logs/%j_kallistoSingle.out
-#SBATCH --error=/work/newton_lab/ag_analysis/A549_vs_primary/kallisto/logs/%j_kallistoSingle.err
+#SBATCH --output=/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/kallisto/logs/%j_kallistoSingle.out
+#SBATCH --error=/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/kallisto/logs/%j_kallistoSingle.err
 #SBATCH --time=03:00:00
 #SBATCH --mem=8GB
 #SBATCH --cpus-per-task=4
 #SBATCH --nodes=1
 
 module load kallisto/0.46.1
-cd /work/newton_lab/ag_analysis/A549_vs_primary/
+cd /work/newton_lab/ag_analysis/a549-hbe-ali-comparison/
 
 index=/work/newton_lab/ag_analysis/ref_seq/hg38_p14_kallisto.idx
 fastq1=$1
@@ -129,15 +129,15 @@ cat <<'EOF' > kallisto/run_kallisto_pairedEnd.slurm
 #!/bin/bash
 
 #SBATCH --job-name=kallisto
-#SBATCH --output=/work/newton_lab/ag_analysis/A549_vs_primary/kallisto/logs/%j_kallistoPaired.out
-#SBATCH --error=/work/newton_lab/ag_analysis/A549_vs_primary/kallisto/logs/%j_kallistoPaired.err
+#SBATCH --output=/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/kallisto/logs/%j_kallistoPaired.out
+#SBATCH --error=/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/kallisto/logs/%j_kallistoPaired.err
 #SBATCH --time=03:00:00
 #SBATCH --mem=8GB
 #SBATCH --cpus-per-task=4
 #SBATCH --nodes=1
 
 module load kallisto/0.46.1
-cd /work/newton_lab/ag_analysis/A549_vs_primary/
+cd /work/newton_lab/ag_analysis/a549-hbe-ali-comparison/
 
 index=/work/newton_lab/ag_analysis/ref_seq/hg38_p14_kallisto.idx
 fastq1=$1
@@ -193,7 +193,7 @@ apptainer exec --bind /work:/work "$MULTIQC" multiqc kallisto/logs/ -o kallisto_
 ```
 
 ```bash (powershell)
-scp alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary/multiqc/multiqc_report.html ./data
+scp alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/a549-hbe-ali-comparison/multiqc/multiqc_report.html ./data
 ```
 
 
@@ -205,7 +205,7 @@ R
 
 ```r setup
 .libPaths("/home/alex.gao1/R")
-setwd("/work/newton_lab/ag_analysis/A549_vs_primary")
+setwd("/work/newton_lab/ag_analysis/a549-hbe-ali-comparison")
 
 library(dplyr)
 library(readr)
