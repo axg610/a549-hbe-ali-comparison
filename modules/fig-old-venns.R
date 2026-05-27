@@ -3,7 +3,7 @@
 
 # create logical matrices
 
-reg <- dea %>%
+reg <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,
@@ -16,7 +16,7 @@ reg <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-reg_fold_only <- dea %>%
+reg_fold_only <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     abs(log2fold) >= 1
@@ -28,7 +28,7 @@ reg_fold_only <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-reg_fdr_only <- dea %>%
+reg_fdr_only <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05
@@ -43,7 +43,7 @@ reg_fdr_only <- dea %>%
 
 
 
-upreg <- dea %>%
+upreg <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,
@@ -56,7 +56,7 @@ upreg <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-upreg_fold_only <- dea %>%
+upreg_fold_only <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     log2fold >= 1
@@ -68,7 +68,7 @@ upreg_fold_only <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-upreg_fdr_only <- dea %>%
+upreg_fdr_only <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     log2fold > 0,
@@ -85,7 +85,7 @@ upreg_fdr_only <- dea %>%
 
 
 
-downreg <- dea %>%
+downreg <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,
@@ -98,7 +98,7 @@ downreg <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-downreg_fold_only <- dea %>%
+downreg_fold_only <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     log2fold <= -1
@@ -110,7 +110,7 @@ downreg_fold_only <- dea %>%
   pivot_wider(names_from = "celltype", values_from = "value", values_fill = 0) %>%
   column_to_rownames("Gene")
 
-downreg_fdr_only <- dea %>%
+downreg_fdr_only <- INPUT_DF %>%
   filter(
     treatment == "IL1B",
     FDR <= 0.05,

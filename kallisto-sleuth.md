@@ -210,6 +210,7 @@ setwd("/work/newton_lab/ag_analysis/a549-hbe-ali-comparison")
 library(dplyr)
 library(readr)
 library(sleuth)
+library(stringr)
 
 system("mkdir sleuth/objects")
 system("ls sleuth")
@@ -247,10 +248,32 @@ s2c_a549_6h <- filter(s2c, time == 6 & celltype == "A549")
 s2c_ali_6h <- filter(s2c, time == 6 & celltype == "ALI")
 s2c_hbe_6h <- filter(s2c, time == 6 & celltype == "HBE")
 
+# only il1b at 6h. also specify donors
+s2c_il1b_6h = s2c %>%
+    filter(time == 6 & treatment %in% c("NS", "IL1B")) %>%
+    mutate(
+        donor = paste0(celltype, rep),
+        donor = if_else(str_detect(celltype, "A549"), "A549donor", donor),
+        .before = celltype
+    )
+
+# s2c at 6h for each celltype, IL1B only, specify donors
+s2c_a549_il1b_6h <- s2c %>%
+  filter(time == 6, celltype == "A549", treatment %in% c("NS", "IL1B")) %>%
+  mutate(donor = "A549donor")
+
+s2c_ali_il1b_6h <- s2c %>%
+  filter(time == 6, celltype == "ALI", treatment %in% c("NS", "IL1B")) %>%
+  mutate(donor = rep)
+
+s2c_hbe_il1b_6h <- s2c %>%
+  filter(time == 6, celltype == "HBE", treatment %in% c("NS", "IL1B")) %>%
+  mutate(donor = rep)
+
 # add more s2cs here
 ```
 
-```r single factor model: celltypes individually at 6h
+```r ~treatment model, each celltype at 6h
 # a549
 so_a549_6h = sleuth_prep(
     sample_to_covariates = s2c_a549_6h,
@@ -358,7 +381,73 @@ results_individual = rbind(a,b,c,d,e,f,g,h,i) %>%
 write_tsv(results_individual, "sleuth/A549vsPrimary_univariateDEA.txt")
 ```
 
-```r multifactor model: all celltypes at 6h
+```r ~treatment+donor model, each celltype at 6h
+so_a549_il1b_6h = sleuth_prep(
+    sample_to_covariates = s2c_a549_il1b_6h,
+    full_model = ~ treatment,
+    target_mapping = t2g,
+    gene_mode = TRUE,
+    aggregation_column = "Gene",
+    filter_fun = new_filter,
+    num_cores = 4
+)
+
+so_ali_il1b_6h <- sleuth_prep(
+  sample_to_covariates = s2c_ali_il1b_6h,
+  full_model = ~ donor + treatment,
+  target_mapping = t2g,
+  gene_mode = TRUE,
+  aggregation_column = "Gene",
+  filter_fun = new_filter,
+  num_cores = 4
+)
+
+so_hbe_il1b_6h <- sleuth_prep(
+  sample_to_covariates = s2c_hbe_il1b_6h,
+  full_model = ~ donor + treatment,
+  target_mapping = t2g,
+  gene_mode = TRUE,
+  aggregation_column = "Gene",
+  filter_fun = new_filter,
+  num_cores = 4
+)
+
+so_a549_il1b_6h = sleuth_fit(so_a549_il1b_6h, ~treatment) %>%
+    sleuth_wt("treatmentIL1B")
+
+so_ali_il1b_6h = sleuth_fit(so_ali_il1b_6h, ~donor + treatment) %>%
+    sleuth_wt("treatmentIL1B")
+
+so_hbe_il1b_6h = sleuth_fit(so_hbe_il1b_6h, ~donor + treatment) %>%
+    sleuth_wt("treatmentIL1B")
+
+a <- sleuth_results(so_a549_il1b_6h, "treatmentIL1B") %>%
+    select(Gene = target_id, log2fold = b, FDR = qval) %>%
+    mutate(log2fold = log2fold / log(2)) %>%
+    mutate(celltype = "A549", treatment = "IL1B", time = "6h", .before = 2)
+b <- sleuth_results(so_ali_il1b_6h, "treatmentIL1B") %>%
+    select(Gene = target_id, log2fold = b, FDR = qval) %>%
+    mutate(log2fold = log2fold / log(2)) %>%
+    mutate(celltype = "ALI", treatment = "IL1B", time = "6h", .before = 2)
+c <- sleuth_results(so_hbe_il1b_6h, "treatmentIL1B") %>%
+    select(Gene = target_id, log2fold = b, FDR = qval) %>%
+    mutate(log2fold = log2fold / log(2)) %>%
+    mutate(celltype = "HBE", treatment = "IL1B", time = "6h", .before = 2)
+
+results_focused = rbind(a,b,c) %>%
+    arrange(Gene, celltype) %>%
+    filter(grepl("^[A-Za-z0-9]+$", Gene)) %>%
+    group_by(Gene) %>%
+    filter(!all(is.na(log2fold))) %>%
+    ungroup() %>%
+    mutate(
+        log2fold = if_else(is.na(log2fold), 0, log2fold),
+        FDR = if_else(is.na(FDR), 1, FDR))
+
+write_tsv(results_focused, "sleuth/A549vsPrimary_DEA_donorCorrected_IL1Bfocused.txt")
+```
+
+```r all celltypes at 6h, pull TPMs
 so_6h = sleuth_prep(
     sample_to_covariates = s2c_6h,
     full_model = ~treatment*celltype,
@@ -367,58 +456,58 @@ so_6h = sleuth_prep(
     filter_fun = new_filter, num_cores = 4
     )
 
-# define the universe of differing responses
-so_6h = sleuth_fit(so_6h, ~celltype*treatment, "full")
-so_6h = sleuth_fit(so_6h, ~celltype+treatment, "reduced")
-so_6h = sleuth_lrt(so_6h, "reduced", "full")
+# # define the universe of differing responses
+# so_6h = sleuth_fit(so_6h, ~celltype*treatment, "full")
+# so_6h = sleuth_fit(so_6h, ~celltype+treatment, "reduced")
+# so_6h = sleuth_lrt(so_6h, "reduced", "full")
 
-# run wald tests
-so_6h = sleuth_wt(so_6h, "celltypeALI:treatmentIL1B")
-so_6h = sleuth_wt(so_6h, "celltypeHBE:treatmentIL1B")
-so_6h = sleuth_wt(so_6h, "celltypeALI:treatmentGC")
-so_6h = sleuth_wt(so_6h, "celltypeHBE:treatmentGC")
-so_6h = sleuth_wt(so_6h, "celltypeALI:treatmentcombo")
-so_6h = sleuth_wt(so_6h, "celltypeHBE:treatmentcombo")
+# # run wald tests
+# so_6h = sleuth_wt(so_6h, "celltypeALI:treatmentIL1B")
+# so_6h = sleuth_wt(so_6h, "celltypeHBE:treatmentIL1B")
+# so_6h = sleuth_wt(so_6h, "celltypeALI:treatmentGC")
+# so_6h = sleuth_wt(so_6h, "celltypeHBE:treatmentGC")
+# so_6h = sleuth_wt(so_6h, "celltypeALI:treatmentcombo")
+# so_6h = sleuth_wt(so_6h, "celltypeHBE:treatmentcombo")
 
 # save
 saveRDS(so_6h, "sleuth/objects/so_6h.rds")
 
-# pull results
-a <- sleuth_results(so_6h, "reduced:full", test_type = "lrt") %>%
-    select(Gene = target_id, lrt_FDR = qval)
-b <- sleuth_results(so_6h, "celltypeALI:treatmentIL1B", test_type = "wt") %>%
-    mutate(b = b / log(2)) %>%
-    select(Gene = target_id, ALI_IL1B_diff = b, ALI_IL1B_FDR = qval)
-c <- sleuth_results(so_6h, "celltypeHBE:treatmentIL1B", test_type = "wt") %>%
-    mutate(b = b / log(2)) %>%
-    select(Gene = target_id, HBE_IL1B_diff = b, HBE_IL1B_FDR = qval)
-d <- sleuth_results(so_6h, "celltypeALI:treatmentGC", test_type = "wt") %>%
-    mutate(b = b / log(2)) %>%
-    select(Gene = target_id, ALI_GC_diff = b, ALI_GC_FDR = qval)
-e <- sleuth_results(so_6h, "celltypeHBE:treatmentGC", test_type = "wt") %>%
-    mutate(b = b / log(2)) %>%
-    select(Gene = target_id, HBE_GC_diff = b, HBE_GC_FDR = qval)
-f <- sleuth_results(so_6h, "celltypeALI:treatmentcombo", test_type = "wt") %>%
-    mutate(b = b / log(2)) %>%
-    select(Gene = target_id, ALI_combo_diff = b, ALI_combo_FDR = qval)
-g <- sleuth_results(so_6h, "celltypeHBE:treatmentcombo", test_type = "wt") %>%
-    mutate(b = b / log(2)) %>%
-    select(Gene = target_id, HBE_combo_diff = b, HBE_combo_FDR = qval)
+# # pull results
+# a <- sleuth_results(so_6h, "reduced:full", test_type = "lrt") %>%
+#     select(Gene = target_id, lrt_FDR = qval)
+# b <- sleuth_results(so_6h, "celltypeALI:treatmentIL1B", test_type = "wt") %>%
+#     mutate(b = b / log(2)) %>%
+#     select(Gene = target_id, ALI_IL1B_diff = b, ALI_IL1B_FDR = qval)
+# c <- sleuth_results(so_6h, "celltypeHBE:treatmentIL1B", test_type = "wt") %>%
+#     mutate(b = b / log(2)) %>%
+#     select(Gene = target_id, HBE_IL1B_diff = b, HBE_IL1B_FDR = qval)
+# d <- sleuth_results(so_6h, "celltypeALI:treatmentGC", test_type = "wt") %>%
+#     mutate(b = b / log(2)) %>%
+#     select(Gene = target_id, ALI_GC_diff = b, ALI_GC_FDR = qval)
+# e <- sleuth_results(so_6h, "celltypeHBE:treatmentGC", test_type = "wt") %>%
+#     mutate(b = b / log(2)) %>%
+#     select(Gene = target_id, HBE_GC_diff = b, HBE_GC_FDR = qval)
+# f <- sleuth_results(so_6h, "celltypeALI:treatmentcombo", test_type = "wt") %>%
+#     mutate(b = b / log(2)) %>%
+#     select(Gene = target_id, ALI_combo_diff = b, ALI_combo_FDR = qval)
+# g <- sleuth_results(so_6h, "celltypeHBE:treatmentcombo", test_type = "wt") %>%
+#     mutate(b = b / log(2)) %>%
+#     select(Gene = target_id, HBE_combo_diff = b, HBE_combo_FDR = qval)
 
-results_6h <- a %>%
-    left_join(b, by = "Gene") %>%
-    left_join(c, by = "Gene") %>%
-    left_join(d, by = "Gene") %>%
-    left_join(e, by = "Gene") %>%
-    left_join(f, by = "Gene") %>%
-    left_join(g, by = "Gene") %>%
-    arrange(Gene) %>%
-    filter(grepl("^[A-Za-z0-9]+$", Gene)) %>%
-    filter(!if_all(-Gene, is.na)) %>%
-    mutate(
-        across(ends_with("_diff"), ~ifelse(is.na(.), 0, .)),
-        across(ends_with("_FDR"),  ~ifelse(is.na(.), 1, .)),
-        lrt_FDR = ifelse(is.na(lrt_FDR), 1, lrt_FDR))
+# results_6h <- a %>%
+#     left_join(b, by = "Gene") %>%
+#     left_join(c, by = "Gene") %>%
+#     left_join(d, by = "Gene") %>%
+#     left_join(e, by = "Gene") %>%
+#     left_join(f, by = "Gene") %>%
+#     left_join(g, by = "Gene") %>%
+#     arrange(Gene) %>%
+#     filter(grepl("^[A-Za-z0-9]+$", Gene)) %>%
+#     filter(!if_all(-Gene, is.na)) %>%
+#     mutate(
+#         across(ends_with("_diff"), ~ifelse(is.na(.), 0, .)),
+#         across(ends_with("_FDR"),  ~ifelse(is.na(.), 1, .)),
+#         lrt_FDR = ifelse(is.na(lrt_FDR), 1, lrt_FDR))
 
 tpm_6h <- kallisto_table(so_6h, use_filtered = FALSE) %>%
     select(Gene = target_id, rep, celltype, treatment, time, tpm) %>%
@@ -434,6 +523,44 @@ tpm_6h <- kallisto_table(so_6h, use_filtered = FALSE) %>%
     mutate(fold = 2^log2fold) %>%
     select(Gene, rep, celltype, treatment, time, tpm, log2tpm, fold, log2fold)
 
-write_tsv(results_6h, "sleuth/A549vsPrimary_multivariateDEA.txt")
+# write_tsv(results_6h, "sleuth/A549vsPrimary_multivariateDEA.txt")
 write_tsv(tpm_6h,     "sleuth/A549vsPrimary_tpm.txt")
+```
+
+```r celltype/treatment LRT for IL1B
+so_il1b_6h = sleuth_prep(
+    sample_to_covariates = s2c_il1b_6h,
+    target_mapping = t2g,
+    gene_mode = TRUE, aggregation_column = "Gene",
+    filter_fun = new_filter, num_cores = 4
+)
+
+saveRDS(so_il1b_6h, "sleuth/objects/so_il1b_6h.rds")
+
+# reduced model: baseline differences between celltypes, one global IL1B response
+so_il1b_6h <- sleuth_fit(
+    so_il1b_6h,
+    ~ celltype + treatment,
+    'reduced'
+)
+
+# full model: still baseline differences between celltypes, but IL1B response can differ by celltype
+so_il1b_6h <- sleuth_fit(
+    so_il1b_6h,
+    ~ celltype + treatment + celltype:treatment,
+    'full'
+)
+
+# LRT: does allowing IL1B responses to differ by cell type significantly improve fit compared to a single shared IL1B response?
+so_il1b_6h <- sleuth_lrt(
+    so_il1b_6h,
+    "reduced",
+    "full"
+)
+
+lrt_results = sleuth_results(so_il1b_6h, "reduced:full", test_type = "lrt") %>%
+    rename(Gene = target_id) %>%
+    rename(FDR = qval)
+
+write_tsv(lrt_results, "sleuth/A549vsPrimary_lrt_IL1B_6h.txt")
 ```
