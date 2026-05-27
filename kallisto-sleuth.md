@@ -250,7 +250,7 @@ s2c_hbe_6h <- filter(s2c, time == 6 & celltype == "HBE")
 # add more s2cs here
 ```
 
-```r univariate model: celltypes individually at 6h
+```r single factor model: celltypes individually at 6h
 # a549
 so_a549_6h = sleuth_prep(
     sample_to_covariates = s2c_a549_6h,
@@ -358,7 +358,7 @@ results_individual = rbind(a,b,c,d,e,f,g,h,i) %>%
 write_tsv(results_individual, "sleuth/A549vsPrimary_univariateDEA.txt")
 ```
 
-```r multivariate model: all celltypes at 6h
+```r multifactor model: all celltypes at 6h
 so_6h = sleuth_prep(
     sample_to_covariates = s2c_6h,
     full_model = ~treatment*celltype,
@@ -436,14 +436,4 @@ tpm_6h <- kallisto_table(so_6h, use_filtered = FALSE) %>%
 
 write_tsv(results_6h, "sleuth/A549vsPrimary_multivariateDEA.txt")
 write_tsv(tpm_6h,     "sleuth/A549vsPrimary_tpm.txt")
-```
-
-#TODO: mechanistic model? explicit factorization of IL1B and GC
-
-```bash
-scp alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary/sleuth/A549vsPrimary_multivariateDEA.txt ./data
-
-scp alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary/sleuth/A549vsPrimary_tpm.txt ./data
-
-scp alex.gao1@arc.ucalgary.ca:/work/newton_lab/ag_analysis/A549_vs_primary/sleuth/A549vsPrimary_univariateDEA.txt ./data
 ```
