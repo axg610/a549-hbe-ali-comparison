@@ -564,3 +564,41 @@ lrt_results = sleuth_results(so_il1b_6h, "reduced:full", test_type = "lrt") %>%
 
 write_tsv(lrt_results, "sleuth/A549vsPrimary_lrt_IL1B_6h.txt")
 ```
+
+```r donor./treatment LRT for IL1B
+# so_il1b_6h = sleuth_prep(
+#     sample_to_covariates = s2c_il1b_6h,
+#     target_mapping = t2g,
+#     gene_mode = TRUE, aggregation_column = "Gene",
+#     filter_fun = new_filter, num_cores = 4
+# )
+
+# saveRDS(so_il1b_6h, "sleuth/objects/so_il1b_6h.rds")
+
+# reduced model: baseline differences between donors, one global IL1B response
+so_il1b_6h = sleuth_fit(
+    so_il1b_6h,
+    ~ donor + treatment,
+    'reduced'
+)
+
+# full model: still baseline differences between donors, but IL1B response can differ by donor
+so_il1b_6h <- sleuth_fit(
+    so_il1b_6h,
+    ~ donor + treatment + donor:treatment,
+    'full'
+)
+
+# LRT: does allowing IL1B responses to differ by donor significantly improve fit compared to a single shared IL1B response?
+so_il1b_6h <- sleuth_lrt(
+    so_il1b_6h,
+    "reduced",
+    "full"
+)
+
+lrt2_results = sleuth_results(so_il1b_6h, "reduced:full", test_type = "lrt") %>%
+    rename(Gene = target_id) %>%
+    rename(FDR = qval)
+
+write_tsv(lrt2_results, "sleuth/A549vsPrimary_lrt2_IL1B_6h.txt")
+```

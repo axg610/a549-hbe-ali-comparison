@@ -46,6 +46,7 @@ dea <- read_tsv("data/raw/A549vsPrimary_univariateDEA.txt")
 dea_focused_donorCorrected <- read_tsv("data/raw/A549vsPrimary_DEA_donorCorrected_IL1Bfocused.txt")
 tpm <- read_tsv("data/raw/A549vsPrimary_tpm.txt")
 lrt <- read_tsv("data/raw/A549vsPrimary_lrt_IL1B_6h.txt")
+lrt2 <- read_tsv("data/raw/A549vsPrimary_lrt2_IL1B_6h.txt")
 ```
 
 # **2. Story notes**
@@ -517,4 +518,51 @@ cleanup_objects()
 # **3. Exploratory**
 
 
+```{r}
+# 623 IL1B-regulated genes shared by all cell types (three models, Wald test)
+goi623 <- dea_focused_donorCorrected %>%
+  group_by(Gene) %>%
+  filter(all(FDR <= 0.05)) %>%
+  ungroup() %>%
+  pull(Gene) %>%
+  unique()
+
+# 54 genes passing fold threshold in all donors
+goi54 <- per_donor_data[["logical_matrix"]] %>%
+  filter(if_all(everything(), ~ .x == 1)) %>%
+  rownames()
+
+# 328 shared genes showing celltype-dependent diff. in IL1B response
+goi328 <- lrt %>% 
+  filter(FDR <= 0.05, Gene %in% goi623) %>% 
+  pull(Gene) %>% 
+  unique()
+
+# 480 shared genes showing donor-dependent diff. in IL1B response
+goi480 <- lrt2 %>%
+  filter(FDR <= 0.05, Gene %in% goi623) %>%
+  pull(Gene) %>%
+  unique()
+
+mat <- tibble(
+  group = c("goi623", "goi54", "goi328", "goi480"),
+  Gene = list(goi623, goi54, goi328, goi480)
+) %>%
+  unnest() %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    names_from = "group",
+    values_from = "value",
+    values_fill = 0
+  ) %>%
+  column_to_rownames("Gene")
+
+plot_euler(
+  mat,
+  shapeType = "ellipse",
+  fillColors = c("aquamarine4", "aquamarine2", "firebrick4", "firebrick1")
+  )
+
+# cleanup_objects()
+```
 
