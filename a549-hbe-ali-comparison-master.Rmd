@@ -61,7 +61,7 @@ Given that IL1B-responsive gene expression patterns in A549s cells follow ... ki
 
 ```{r old venns, fig.height=4, fig.width=4, out.width="33%", fig.show='hold', cache=T}
 INPUT_DF = dea
-source("modules/fig-old-venns.R")
+source("modules/old-venns.R")
 cleanup_objects()
 ```
 
@@ -69,7 +69,7 @@ cleanup_objects()
 
 ```{r old venns with donor adjustment, fig.height=4, fig.width=4, out.width="33%", fig.show='hold', cache=T}
 INPUT_DF = dea_focused_donorCorrected
-source("modules/fig-old-venns.R")
+source("modules/old-venns.R")
 cleanup_objects()
 ```
 
@@ -120,7 +120,7 @@ cleanup_objects()
 
 
 ```{r venns and heatmaps of reps, fig.height=7, fig.width=6, out.width="50%", fig.show='hold'}
-source("modules/fig-variability-due-to-basal.R")
+source("modules/variability-due-to-basal.R")
 cleanup_objects()
 ```
 
@@ -130,28 +130,28 @@ cleanup_objects()
 **Primary cell donors are more variable than A549 cell replicates.** Counts and variability for regulated genes (abs(log2fold) > 1)  were assessed across donors. **(A-C)** A549 and primary cells have similar numbers of "regulated" genes, with slightly less upregulation in A549s. **(D)** For "regulated" genes in general, there is more variability in log2fold across replicates of A549s than pooled primary cell donors. **(E-F)** This relationship reverses when restricting the analysis to genes regulating in the same direction, suggesting that between-donor variability comes from failure to "agree" on the direction in which many genes regulate. **(G)** When visualizing the union of all regulated genes (14621) across replicates as a heatmap, primary cells show blocks of up- or down-regulation unique to each donor.
 
 ```{r plot per-donor figs, fig.height=5, fig.width=9}
-source("modules/fig-per-donor-threshold-metrics.R")
+source("modules/per-donor-threshold-metrics.R")
 cleanup_objects()
 ```
 
 **Donors show more uniquely regulated genes than shared genes.** To understand individual variation, A549 cell replicates were averaged to represent one donor. Then overlaps between the A549 donor and all other primary donors were visualized as an UpSet plot. **(A)** Compared to genes regulated in only one donor (left side, first 11 bars), there are much fewer genes shared between donors (right side) *(do a manual count?)*. Splitting the visualization into **(B)** upregulated and **(C)** downregulated genes reveals that A549s have "normal" IL1B-upregulated signatures (middle-of-the-pack in terms of unique upreg genes), but abberant IL1B-downregulated signatures (has the most downregulated genes). Additionally, the 54 completely conserved genes are exclusively upregulated. This suggests that the IL1B-induced response is more core/conserved while the downregulated response is more context/individual-specific.
 
 ```{r plot upsets between donors, fig.height=8, fig.width=8}
-source("modules/fig-per-donor-upset.R")
+source("modules/per-donor-upset.R")
 cleanup_objects()
 ```
 
 **Transcriptomic overlaps between each donor and A549 cells are small.** To assess similarities between each primary cell donor and the A549 mean, regulated genes were compared between each primary cell donor and A549 cells. **(A)** Only a small percentage (<15%) of each donor's regulation pool is recapitulated by A549 cells. This is less of a problem for IL1B-induced genes **(B)** and more of a problem for IL1B-downregulated genes **(C)**. J = Jaccard index, n = total number of genes.
 
 ```{r plot pairwise venns vs a549, fig.width=8}
-source("modules/fig-per-donor-pairwise-venns.R")
+source("modules/per-donor-pairwise-venns.R")
 cleanup_objects()
 ```
 
 Plotting each donor-to-A549 comparison, we see that overlaps tend to be bigger for upregulated genes and smaller for downregulated. T-test for $Jaccard_{\text{upreg}}$ vs $Jaccard_{\text{downreg}}$ (bottom right panel) returns P=0.0001169 (***).
 
 ```{r plot pairwise venns summary, fig.height=4, fig.width=4}
-source("modules/fig-per-donor-pairwise-venns-summary.R")
+source("modules/per-donor-pairwise-venns-summary.R")
 cleanup_objects()
 ```
 
@@ -162,7 +162,7 @@ cleanup_objects()
 This property is not unique to A549 cells. When taking each primary cell donor and comparing their unique genes vs those shared with at least one other donor (ALIs, HBEs, and A549), we get ~83% shared with 1+ other donor(s) and ~17% unique to that donor. Each point is one cell.
 
 ```{r fig.height=3, fig.width=4, out.width='50%', fig.show='hold'}
-source("modules/fig-majority-shared-with-donors.R")
+source("modules/majority-shared-with-donors.R")
 cleanup_objects()
 ```
 
