@@ -28,6 +28,7 @@ library(pheatmap)
 library(patchwork)
 library(ggrepel)
 source("modules/helpers.R")
+library(deming)
 
 #tidyverse
 library(tidyverse)
@@ -517,52 +518,105 @@ cleanup_objects()
 
 # **3. Exploratory**
 
+```{r pearson between all donor pairs, fig.width=7, fig.height=4}
 
-```{r}
-# 623 IL1B-regulated genes shared by all cell types (three models, Wald test)
-goi623 <- dea_focused_donorCorrected %>%
-  group_by(Gene) %>%
-  filter(all(FDR <= 0.05)) %>%
-  ungroup() %>%
-  pull(Gene) %>%
-  unique()
+datasets_to_try = list(
+  "A549 reps meaned" = list(
+    "log2fold_vals" = per_donor_data[["thresholded_log2fold"]],
+    "tpm_vals" = per_donor_data[["tpm_by_donor"]]
+  ),
+  
+  "A549 reps separate" = list(
+    "log2fold_vals" = per_donor_data[["thresholded_log2fold_A549separate"]],
+    "tpm_vals" = per_donor_data[["tpm_by_donor_A549separate"]]
+  ) 
+)
 
-# 54 genes passing fold threshold in all donors
-goi54 <- per_donor_data[["logical_matrix"]] %>%
-  filter(if_all(everything(), ~ .x == 1)) %>%
-  rownames()
 
-# 328 shared genes showing celltype-dependent diff. in IL1B response
-goi328 <- lrt %>% 
-  filter(FDR <= 0.05, Gene %in% goi623) %>% 
-  pull(Gene) %>% 
-  unique()
+for(dataset_name in names(datasets_to_try)) {
 
-# 480 shared genes showing donor-dependent diff. in IL1B response
-goi480 <- lrt2 %>%
-  filter(FDR <= 0.05, Gene %in% goi623) %>%
-  pull(Gene) %>%
-  unique()
+  log2fold_vals <- datasets_to_try[[dataset_name]]$log2fold_vals
+  tpm_vals      <- datasets_to_try[[dataset_name]]$tpm_vals
 
-mat <- tibble(
-  group = c("goi623", "goi54", "goi328", "goi480"),
-  Gene = list(goi623, goi54, goi328, goi480)
-) %>%
-  unnest() %>%
-  mutate(value = 1) %>%
-  pivot_wider(
-    names_from = "group",
-    values_from = "value",
-    values_fill = 0
-  ) %>%
-  column_to_rownames("Gene")
+  # pick out genes
+  goi <- log2fold_vals %>%
+    filter(meets_threshold) %>%
+    pull(Gene)
 
-plot_euler(
-  mat,
-  shapeType = "ellipse",
-  fillColors = c("aquamarine4", "aquamarine2", "firebrick4", "firebrick1")
+  # get log2folds for genes of interest
+  wide_log2fold <- log2fold_vals %>%
+    filter(Gene %in% goi) %>%
+    select(Gene, name, log2fold) %>%
+    pivot_wider(
+      names_from = name,
+      values_from = log2fold
+    )
+
+  # get tpms for genes of interest
+  wide_log2tpm <- tpm_vals %>%
+    filter(Gene %in% goi) %>%
+    select(Gene, name, log2tpm) %>%
+    group_by(Gene, name) %>%
+    summarize(
+      log2tpm = mean(log2tpm),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(
+      names_from = name,
+      values_from = log2tpm
+    )
+
+  # calculate pearson matrices
+  pearson_log2fold <- wide_log2fold %>%
+    select(-Gene) %>%
+    cor(method = "pearson")
+
+  pearson_tpm <- wide_log2tpm %>%
+    select(-Gene) %>%
+    cor(method = "pearson")
+
+  # plot heatmaps
+  draw(
+    Heatmap(
+      pearson_log2fold,
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
+      col = circlize::colorRamp2(
+        seq(0, 1, length.out = 5),
+        viridis::viridis(5)
+      ),
+      column_title = paste(dataset_name, "- correlation of log2fold values"),
+      name = "Pearson r",
+      width = unit(2, "in"),
+      height = unit(2, "in")
+    )
   )
 
-# cleanup_objects()
+  draw(
+    Heatmap(
+      pearson_tpm,
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
+      col = circlize::colorRamp2(
+        seq(0, 1, length.out = 5),
+        viridis::viridis(5)
+      ),
+      column_title = paste(dataset_name, "- correlation of log2tpm values"),
+      name = "Pearson r",
+      width = unit(2, "in"),
+      height = unit(2, "in")
+    )
+  )
+}
+
+cleanup_objects()
 ```
+
+
+
+
+
+
+
+
 
